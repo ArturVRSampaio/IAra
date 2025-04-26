@@ -28,8 +28,10 @@ audio_queue = queue.Queue()
 db_level_buffer = CircularList(50)
 audio_buffer = []
 last_spoke = datetime.now() - timedelta(hours=1)
+last_llm_spoke = datetime.now() - timedelta(hours=1)
 lock = threading.Lock()
 is_processing = False
+print(Bcolors.WARNING + "is_processing False")
 last_chat_message = None  # Armazena a última mensagem do chat
 
 tts = TTS(model_name="tts_models/en/ljspeech/vits", progress_bar=True, gpu=False)
@@ -91,18 +93,21 @@ def ask_llm(text):
     if not text:
         return
 
-    global is_processing
+    global is_processing, last_llm_spoke
     with lock:
         print('lock')
         is_processing = True
+        print(Bcolors.WARNING + "is_processing True")
         try:
             print("try")
-            response = gpt4all.generate(text, max_tokens=120, temp=0.8)
+            response = gpt4all.generate(text, max_tokens=200, n_batch=60, temp=0.8)
             print(Bcolors.OKBLUE + response, flush=True)
             text_to_speech(response)
         finally:
             print("finally")
+            last_llm_spoke= datetime.now()
             is_processing = False
+            print(Bcolors.WARNING + "is_processing False")
 
 def calc_db_level(audio_data) -> int:
     rms = np.sqrt(np.mean(np.square(audio_data)))
@@ -130,8 +135,8 @@ def callback(indata, frames, time, status):
             audio_buffer.clear()
 
 def process_audio():
-    global last_chat_message
-    with gpt4all.chat_session():
+    global last_chat_message, last_llm_spoke
+    with (gpt4all.chat_session()):
         ask_llm(system_prompt + " we are starting the stream now! how are you doing?")
 
         while True:
@@ -147,12 +152,12 @@ def process_audio():
                     group_segments += " " + segment.text
                 print(Bcolors.OKGREEN + group_segments)
                 ask_llm('Artur says: ' + group_segments)
-            elif last_spoke < datetime.now() - timedelta(seconds=3) and not is_processing and last_chat_message is not None:
+            elif last_spoke < datetime.now() - timedelta(seconds=3)  and last_llm_spoke < datetime.now() - timedelta(seconds=5) and not is_processing and last_chat_message is not None:
                     user, message = last_chat_message
                     last_chat_message = None
                     print(Bcolors.OKCYAN + f'Respondendo ao chat: {user}: {message}')
                     ask_llm(f'{user} says: {message}. if his message is not important, ignore it')
-            elif last_spoke < datetime.now() - timedelta(seconds=35) and audio_queue.empty() and not is_processing:
+            elif last_spoke < datetime.now() - timedelta(seconds=3) and last_llm_spoke < datetime.now() - timedelta(seconds=10) and audio_queue.empty() and not is_processing:
                 print(Bcolors.OKCYAN + f'continuando conversa')
                 ask_llm(f'updating context:{system_prompt}. no one says nothing, continue explaining your last answer')
 
