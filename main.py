@@ -15,6 +15,7 @@ import torch
 import sounddevice as sd
 import torchaudio
 from TTS.api import TTS
+import time
 
 load_dotenv()
 
@@ -127,12 +128,11 @@ def callback(indata, frames, time, status):
     if db_level_buffer.mean() > THRESHOLD_DB:
         audio_buffer.extend(indata.tolist())
         last_spoke = datetime.now()
-    if last_spoke < datetime.now() - timedelta(seconds=1.5) and len(audio_buffer) > 0:
-        if not is_processing:
-            audio_data = np.array(audio_buffer, dtype=np.float32)
-            audio_queue.put(audio_data)
-            print(Bcolors.WARNING + 'processing audio file')
-            audio_buffer.clear()
+    if last_spoke < datetime.now() - timedelta(seconds=1.5) and len(audio_buffer) > 0 and not is_processing:
+        audio_data = np.array(audio_buffer, dtype=np.float32)
+        audio_queue.put(audio_data)
+        print(Bcolors.WARNING + 'processing audio file')
+        audio_buffer.clear()
 
 def process_audio():
     global last_chat_message, last_llm_spoke
@@ -152,7 +152,7 @@ def process_audio():
                     group_segments += " " + segment.text
                 print(Bcolors.OKGREEN + group_segments)
                 ask_llm('Artur says: ' + group_segments)
-            elif last_spoke < datetime.now() - timedelta(seconds=3)  and last_llm_spoke < datetime.now() - timedelta(seconds=5) and not is_processing and last_chat_message is not None:
+            elif last_spoke < datetime.now() - timedelta(seconds=3) and last_llm_spoke < datetime.now() - timedelta(seconds=5) and not is_processing and last_chat_message is not None:
                     user, message = last_chat_message
                     last_chat_message = None
                     print(Bcolors.OKCYAN + f'Respondendo ao chat: {user}: {message}')
@@ -173,7 +173,6 @@ def start_listening():
     threading.Thread(target=lambda: loop.run_until_complete(run_twitch_bot()), daemon=True).start()
 
     # Pequeno atraso para garantir que o bot da Twitch esteja inicializado
-    import time
     time.sleep(2)
 
     with sd.InputStream(callback=callback, channels=1, samplerate=SAMPLE_RATE, dtype='float32'):
