@@ -20,6 +20,7 @@ from faster_whisper import WhisperModel
 # Local imports
 from Bcolors import Bcolors
 from CircularList import CircularList
+from vtube.VTubeStudioTalk import VTubeStudioTalk
 
 # Load environment variables
 load_dotenv()
@@ -40,6 +41,7 @@ last_llm_spoke = datetime.now() - timedelta(hours=1)
 lock = threading.Lock()
 is_processing = False
 last_chat_message = None
+vts_talk = None  # VTube Studio talk instance
 
 # Initialize models
 tts = TTS(model_name="tts_models/en/ljspeech/vits", progress_bar=True, gpu=False)
@@ -61,10 +63,8 @@ SYSTEM_PROMPT = (
     "Speak only in English."
 )
 
-
 class TwitchBot(commands.Bot):
     """Twitch bot for handling chat interactions."""
-
     def __init__(self):
         token = os.getenv('TWITCH_OAUTH_TOKEN')
         channel = os.getenv('TWITCH_CHANNEL')
@@ -85,12 +85,10 @@ class TwitchBot(commands.Bot):
         print(f'{message.author.name}: {message.content}')
         await self.handle_commands(message)
 
-
 def calculate_db_level(audio_data: np.ndarray) -> int:
     """Calculate the decibel level of audio data."""
     rms = np.sqrt(np.mean(np.square(audio_data)))
     return int(20 * np.log10(rms)) if rms > 0 else -200
-
 
 def text_to_speech(text: str) -> None:
     """Convert text to speech and play it."""
@@ -100,10 +98,11 @@ def text_to_speech(text: str) -> None:
     tts.tts_to_file(text=text, file_path=output_file)
     waveform, sample_rate = torchaudio.load(output_file)
     amplified_waveform = torch.clamp(waveform * 3.0, -1.0, 1.0)
+    if vts_talk:
+        vts_talk.run_sync_mouth(amplified_waveform, sample_rate)
     sd.play(amplified_waveform.numpy().T, sample_rate)
     sd.wait()
     print("Audio file played")
-
 
 def ask_llm(text: str) -> None:
     """Generate a response using the LLM and convert it to speech."""
@@ -121,7 +120,6 @@ def ask_llm(text: str) -> None:
         last_llm_spoke = datetime.now()
         is_processing = False
         print(Bcolors.WARNING + "Processing finished")
-
 
 def audio_callback(indata, frames, time, status) -> None:
     """Process incoming audio data from the microphone."""
@@ -141,7 +139,6 @@ def audio_callback(indata, frames, time, status) -> None:
         audio_queue.put(np.array(audio_buffer, dtype=np.float32))
         print(Bcolors.WARNING + "Processing audio file")
         audio_buffer.clear()
-
 
 def process_audio() -> None:
     """Process audio from queue and respond to chat messages."""
@@ -171,17 +168,18 @@ def process_audio() -> None:
                 print(Bcolors.OKCYAN + 'Continuing conversation')
                 ask_llm(f'Updating context: {SYSTEM_PROMPT}. Continue your last answer.')
 
-
 async def run_twitch_bot() -> None:
     """Run the Twitch bot."""
     bot = TwitchBot()
     await bot.start()
 
-
 def start_listening() -> None:
     """Start the audio listener and Twitch bot."""
+    global vts_talk
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    vts_talk = VTubeStudioTalk(loop)
+    loop.run_until_complete(vts_talk.connect())
     threading.Thread(
         target=lambda: loop.run_until_complete(run_twitch_bot()),
         daemon=True
@@ -197,6 +195,10 @@ def start_listening() -> None:
         print(Bcolors.OKGREEN + "System initialized")
         process_audio()
 
-
 if __name__ == "__main__":
-    start_listening()
+    try:
+        start_listening()
+    finally:
+        if vts_talk:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(vts_talk.disconnect())
