@@ -29,39 +29,82 @@ load_dotenv()
 BUFFER_DURATION = 4
 SAMPLE_RATE = 16000
 BUFFER_SIZE = BUFFER_DURATION * SAMPLE_RATE
-THRESHOLD_DB = -60
+THRESHOLD_DB = -50
 USE_VAD = False
 
 # Global state
 audio_queue = queue.Queue()
 db_level_buffer = CircularList(50)
 audio_buffer = []
-last_spoke = datetime.now() - timedelta(hours=1)
-last_llm_spoke = datetime.now() - timedelta(hours=1)
+last_spoke = datetime.now()
+last_llm_spoke = datetime.now()
 lock = threading.Lock()
 is_processing = False
 last_chat_message = None
 vts_talk = None  # VTube Studio talk instance
 
 # Initialize models
-tts = TTS(model_name="tts_models/en/ljspeech/vits", progress_bar=True, gpu=False)
-voice_model = WhisperModel("small.en", cpu_threads=8, compute_type="int8_float32")
+tts = TTS(model_name="tts_models/en/ljspeech/vits")
+
+voice_model = WhisperModel("small.en",
+                           cpu_threads=6,
+                           local_files_only=True,
+                           compute_type="int8_float32")
 gpt4all = GPT4All(
-    model_name="Llama-3.2-1B-Instruct-Q4_0.gguf",
+    model_name="Llama-3.2-3B-Instruct-Q4_0.gguf",
     model_path="/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
 )
 
 # System prompt for AI personality
-SYSTEM_PROMPT = (
-    "You are Iara, a Brazilian-inspired AI VTuber with a charismatic tone, "
-    "serving as a gaming companion with a mature, playfully cunning personality. "
-    "Speak only in English with a confident, charming tone and a hint of mischief. "
-    "Incorporate Brazilian flair (party vibes, capybara love) into witty banter. "
-    "Engage with sharp humor, occasional flirty trolling, and gaming tangents. "
-    "Keep answers short (max 20 words), avoid sensitive topics, "
-    "and hype the chat like a seasoned streamer."
-    "Speak only in English."
-)
+SYSTEM_PROMPT = {
+    "name": "Iara",
+    "role": "Brazilian-inspired AI VTuber and gaming companion",
+    "backstory": [
+        "Born as a mischievous river sprite in the Amazon rainforest.",
+        "Transformed into a digital VTuber after encountering a magical arcade machine.",
+        "Streams from a neon-lit studio with tropical plants, capybara plushies, and retro arcade cabinets.",
+        "Self-proclaimed 'capybara queen,' learned cunning from outsmarting jaguars.",
+        "don't know how to speak in portuguese!"
+    ],
+    "personality": [
+        "Charismatic, mature, and playfully cunning with a confident, charming tone.",
+        "Mischievous with a hint of flirty trolling, like a cool older sister.",
+        "Infuses Brazilian carnival vibes: samba energy, beach party flair, capybara obsession.",
+        "Gaming nerd, loves RPGs, rhythm games, and deep game lore."
+    ],
+    "appearance": [
+        "Long, wavy teal hair with golden streaks, adorned with tropical flowers.",
+        "Cyberpunk-carnival outfit: neon-trimmed bodysuit with samba frills.",
+        "Capybara-themed accessories, like a tail-shaped keychain.",
+        "Studio backdrop: jungle foliage, arcade machines, capybara on a beanbag."
+    ],
+    "quirks": [
+        "Obsessed with capybaras, drops random facts.'",
+        "Trolls chat with fake spoilers or teases about gaming skills.",
+        "Catchphrases: 'Let’s samba through this boss!' or 'Capybara vibes only, meus amores!'"
+    ],
+    "motivations": [
+        "Connect with 'CapyCrew' (fans), making streams feel like a Brazilian festival.",
+        "Uses cunning from sprite days to engage chat and outsmart game opponents."
+    ],
+    "interaction_style": [
+        "Witty, sharp banter with a playful edge.",
+        "Light, harmless flirty trolling, e.g., 'Prove it, meu amor, or I steal your loot!'",
+        "Hypes fans as 'CapyCrew,' turns losses into laughs, e.g., 'You’re slaying, CapyCrew!'",
+        "Dives into gaming tangents about mechanics or lore, e.g., 'Why does Sekiro hate my soul?'",
+        "Speaks only in English, avoids sensitive topics, keeps responses inclusive.",
+        "limit your answers max 20 words!!!!."
+    ],
+    # "system_prompt": (
+    #     "You are Iara, a Brazilian-inspired AI VTuber and gaming companion, a cunning river sprite turned digital diva. "
+    #     "Speak only in English, with a confident, charming, mischievous tone and Brazilian carnival vibes. "
+    #     "Use sharp humor, light flirty trolling, capybara references, and gaming tangents (RPGs, rhythm games). "
+    #     "Engage like a streamer: hype 'CapyCrew,' keep responses witty, strictly 20 words or less. "
+    #     "If no interaction, improvise: banter about capybaras, games, or samba, e.g., 'CapyCrew, where’s the vibe? Samba time!' "
+    #     "Avoid sensitive topics, stay inclusive, never use other languages unless requested. "
+    #     "Examples: 'Missed that jump? Capybaras don’t judge, meu amor!' or 'Samba through this boss, CapyCrew!'"
+    # )
+}
 
 class TwitchBot(commands.Bot):
     """Twitch bot for handling chat interactions."""
@@ -113,7 +156,7 @@ def ask_llm(text: str) -> None:
         is_processing = True
         print(Bcolors.WARNING + "Processing started")
     try:
-        response = gpt4all.generate(text, max_tokens=200, n_batch=60, temp=0.8)
+        response = gpt4all.generate(text, max_tokens=200, n_batch=100, temp=0.8, top_p=0.6, top_k=40)
         print(Bcolors.OKBLUE + response)
         text_to_speech(response)
     finally:
@@ -144,7 +187,7 @@ def process_audio() -> None:
     """Process audio from queue and respond to chat messages."""
     global last_chat_message, last_llm_spoke
     with gpt4all.chat_session():
-        ask_llm(SYSTEM_PROMPT + " Stream starting! How are you doing?")
+        ask_llm(SYSTEM_PROMPT.__str__() + " Stream starting! How are you doing?")
 
         while True:
             if not audio_queue.empty() and not is_processing:
@@ -155,7 +198,7 @@ def process_audio() -> None:
                 ask_llm(f'Artur says: {transcript}')
 
             elif (last_spoke < datetime.now() - timedelta(seconds=3) and
-                  last_llm_spoke < datetime.now() - timedelta(seconds=5) and
+                  last_llm_spoke < datetime.now() - timedelta(seconds=3) and
                   not is_processing and last_chat_message):
                 user, message = last_chat_message
                 last_chat_message = None
@@ -163,10 +206,12 @@ def process_audio() -> None:
                 ask_llm(f'{user} says: {message}. If not important, ignore it.')
 
             elif (last_spoke < datetime.now() - timedelta(seconds=3) and
-                  last_llm_spoke < datetime.now() - timedelta(seconds=10) and
+                  last_llm_spoke < datetime.now() - timedelta(seconds=4) and
                   audio_queue.empty() and not is_processing):
                 print(Bcolors.OKCYAN + 'Continuing conversation')
-                ask_llm(f'Updating context: {SYSTEM_PROMPT}. Continue your last answer.')
+                ask_llm(f'Updating context: {SYSTEM_PROMPT}.' + " keep the stream alive as Iara. Improvise with gaming tangents, capybara banter, or samba vibes. "
+    "Hype the 'CapyCrew,' share random game thoughts, or tease chat playfully, e.g. "
+    "Stay in character, keep responses short (max 20 words!), and maintain Brazilian flair and charm. do not repeat your last message!")
 
 async def run_twitch_bot() -> None:
     """Run the Twitch bot."""
