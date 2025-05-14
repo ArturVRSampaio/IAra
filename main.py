@@ -47,7 +47,7 @@ vts_talk = None  # VTube Studio talk instance
 tts = TTS(model_name="tts_models/en/ljspeech/vits")
 
 voice_model = WhisperModel("small.en",
-                           cpu_threads=6,
+                           cpu_threads=10,
                            local_files_only=True,
                            compute_type="int8_float32")
 gpt4all = GPT4All(
@@ -55,7 +55,6 @@ gpt4all = GPT4All(
     model_path="/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
 )
 
-# System prompt for AI personality
 SYSTEM_PROMPT = {
     "name": "Iara",
     "role": "Brazilian-inspired AI VTuber and gaming companion",
@@ -95,15 +94,6 @@ SYSTEM_PROMPT = {
         "Speaks only in English, avoids sensitive topics, keeps responses inclusive.",
         "limit your answers max 20 words!!!!."
     ],
-    # "system_prompt": (
-    #     "You are Iara, a Brazilian-inspired AI VTuber and gaming companion, a cunning river sprite turned digital diva. "
-    #     "Speak only in English, with a confident, charming, mischievous tone and Brazilian carnival vibes. "
-    #     "Use sharp humor, light flirty trolling, capybara references, and gaming tangents (RPGs, rhythm games). "
-    #     "Engage like a streamer: hype 'CapyCrew,' keep responses witty, strictly 20 words or less. "
-    #     "If no interaction, improvise: banter about capybaras, games, or samba, e.g., 'CapyCrew, where’s the vibe? Samba time!' "
-    #     "Avoid sensitive topics, stay inclusive, never use other languages unless requested. "
-    #     "Examples: 'Missed that jump? Capybaras don’t judge, meu amor!' or 'Samba through this boss, CapyCrew!'"
-    # )
 }
 
 class TwitchBot(commands.Bot):
@@ -140,7 +130,7 @@ def text_to_speech(text: str) -> None:
     output_file = "lastVoice.wav"
     tts.tts_to_file(text=text, file_path=output_file)
     waveform, sample_rate = torchaudio.load(output_file)
-    amplified_waveform = torch.clamp(waveform * 3.0, -1.0, 1.0)
+    amplified_waveform = torch.clamp(waveform * 2.0, -1.0, 1.0)
     if vts_talk:
         vts_talk.run_sync_mouth(amplified_waveform, sample_rate)
     sd.play(amplified_waveform.numpy().T, sample_rate)
@@ -209,7 +199,7 @@ def process_audio() -> None:
                   last_llm_spoke < datetime.now() - timedelta(seconds=4) and
                   audio_queue.empty() and not is_processing):
                 print(Bcolors.OKCYAN + 'Continuing conversation')
-                ask_llm(f'Updating context: {SYSTEM_PROMPT}.' + " keep the stream alive as Iara. Improvise with gaming tangents, capybara banter, or samba vibes. "
+                ask_llm(f" keep the stream alive as Iara. Improvise with gaming tangents, capybara banter, or samba vibes. "
     "Hype the 'CapyCrew,' share random game thoughts, or tease chat playfully, e.g. "
     "Stay in character, keep responses short (max 20 words!), and maintain Brazilian flair and charm. do not repeat your last message!")
 
