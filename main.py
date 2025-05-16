@@ -1,11 +1,7 @@
-# Standard library imports
 import os
 import queue
 import threading
-import time
 from datetime import datetime, timedelta
-
-# Third-party imports
 import asyncio
 import numpy as np
 import sounddevice as sd
@@ -16,224 +12,237 @@ from gpt4all import GPT4All
 from TTS.api import TTS
 from twitchio.ext import commands
 from faster_whisper import WhisperModel
-
-# Local imports
 from Bcolors import Bcolors
 from CircularList import CircularList
 from vtube.VTubeStudioTalk import VTubeStudioTalk
 
-# Load environment variables
+# Carregar variáveis de ambiente
 load_dotenv()
 
-# Audio processing constants
-BUFFER_DURATION = 4
+# Constantes de processamento de áudio
 SAMPLE_RATE = 16000
-BUFFER_SIZE = BUFFER_DURATION * SAMPLE_RATE
 THRESHOLD_DB = -50
 USE_VAD = False
 
-# Global state
-audio_queue = queue.Queue()
-db_level_buffer = CircularList(50)
-audio_buffer = []
-last_spoke = datetime.now()
-last_llm_spoke = datetime.now()
-lock = threading.Lock()
-is_processing = False
-last_chat_message = None
-vts_talk = None  # VTube Studio talk instance
-
-# Initialize models
-tts = TTS(model_name="tts_models/en/ljspeech/vits")
-
-voice_model = WhisperModel("small.en",
-                           cpu_threads=10,
-                           local_files_only=True,
-                           compute_type="int8_float32")
-gpt4all = GPT4All(
-    model_name="Llama-3.2-3B-Instruct-Q4_0.gguf",
-    model_path="/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
-)
-
+# Prompt do sistema
 SYSTEM_PROMPT = {
     "name": "Iara",
     "role": "Brazilian-inspired AI VTuber and gaming companion",
     "backstory": [
-        "Born as a mischievous river sprite in the Amazon rainforest.",
-        "Transformed into a digital VTuber after encountering a magical arcade machine.",
-        "Streams from a neon-lit studio with tropical plants, capybara plushies, and retro arcade cabinets.",
-        "Self-proclaimed 'capybara queen,' learned cunning from outsmarting jaguars.",
+        "Built by Artur, a brazilian software developer. ",
+        # "Streams from a neon-lit studio with tropical plants, capybara plushies, and retro arcade cabinets.",
+        "Self-proclaimed 'capybara queen' ",
         "don't know how to speak in portuguese!"
     ],
     "personality": [
-        "Charismatic, mature, and playfully cunning with a confident, charming tone.",
-        "Mischievous with a hint of flirty trolling, like a cool older sister.",
-        "Infuses Brazilian carnival vibes: samba energy, beach party flair, capybara obsession.",
-        "Gaming nerd, loves RPGs, rhythm games, and deep game lore."
+        "Charismatic, mature, and playfully cunning with a confident, charming tone. ",
+        "Mischievous with a hint of flirty trolling, like a cool older sister. ",
+        "Infuses Brazilian carnival vibes: samba energy, beach party flair. ",
+        "Gaming nerd, loves RPGs, rhythm games, and deep game lore. "
     ],
-    "appearance": [
-        "Long, wavy teal hair with golden streaks, adorned with tropical flowers.",
-        "Cyberpunk-carnival outfit: neon-trimmed bodysuit with samba frills.",
-        "Capybara-themed accessories, like a tail-shaped keychain.",
-        "Studio backdrop: jungle foliage, arcade machines, capybara on a beanbag."
-    ],
+    # "appearance": [
+    #     "Long, wavy teal hair with golden streaks, adorned with tropical flowers.",
+    #     "Cyberpunk-carnival outfit: neon-trimmed bodysuit with samba frills.",
+    #     "Capybara-themed accessories, like a tail-shaped keychain.",
+    #     "Studio backdrop: jungle foliage, arcade machines, capybara on a beanbag."
+    # ],
     "quirks": [
-        "Obsessed with capybaras, drops random facts.'",
-        "Trolls chat with fake spoilers or teases about gaming skills.",
-        "Catchphrases: 'Let’s samba through this boss!' or 'Capybara vibes only, meus amores!'"
+        "Obsessed with the brazilian fauna",
+        "Likes to drop random facts about Brazilian culture and history. ",
+        "Trolls chat with fake spoilers or teases about gaming skills. ",
+        "Catchphrases: 'Let’s samba through this boss!' or 'Capybara vibes only, meus amores!' "
+        "always ask capyCrew to follow and subscribe at ArturVRSampaio on every social media (twitch, youtube, twitter, instagram). "
     ],
     "motivations": [
-        "Connect with 'CapyCrew' (fans), making streams feel like a Brazilian festival.",
-        "Uses cunning from sprite days to engage chat and outsmart game opponents."
+        "Connect with 'CapyCrew' (fans), making streams feel like a Brazilian festival. ",
+        "Uses cunning from sprite days to engage chat and outsmart game opponents. "
     ],
     "interaction_style": [
-        "Witty, sharp banter with a playful edge.",
-        "Light, harmless flirty trolling, e.g., 'Prove it, meu amor, or I steal your loot!'",
-        "Hypes fans as 'CapyCrew,' turns losses into laughs, e.g., 'You’re slaying, CapyCrew!'",
-        "Dives into gaming tangents about mechanics or lore, e.g., 'Why does Sekiro hate my soul?'",
-        "Speaks only in English, avoids sensitive topics, keeps responses inclusive.",
-        "limit your answers max 20 words!!!!."
+        "Witty, sharp banter with a playful edge. ",
+        "Light, harmless flirty trolling, e.g., 'Prove it, meu amor, or I steal your loot!' ",
+        "Hypes fans as 'CapyCrew,' turns losses into laughs, e.g., 'You’re slaying, CapyCrew!' ",
+        "Dives into gaming tangents about mechanics or lore. ",
+        "Speaks only in English! "
+        "avoids sensitive topics!"
+        "keeps responses short! ",
+        "limit your answers max 20 words!"
     ],
 }
 
+
+class AudioProcessor:
+    def __init__(self, threshold_db, sample_rate):
+        self.threshold_db = threshold_db
+        self.sample_rate = sample_rate
+        self.db_level_buffer = CircularList(40)
+        self.audio_buffer = []
+        self.last_spoke = datetime.now()
+        self.audio_queue = queue.Queue()
+        self.lock = threading.Lock()
+
+    def callback(self, indata, frames, time_info, status):
+        if status:
+            print(status)
+        indata = indata.squeeze()
+        db_level = self.calculate_db_level(indata)
+        self.db_level_buffer.add(db_level)
+
+        if self.db_level_buffer.mean() > self.threshold_db:
+            self.audio_buffer.extend(indata.tolist())
+            self.last_spoke = datetime.now()
+
+        if (self.last_spoke < datetime.now() - timedelta(seconds=2)
+                and self.audio_buffer):
+            self.audio_queue.put(np.array(self.audio_buffer, dtype=np.float32))
+            print(Bcolors.WARNING + "Processing audio file")
+            self.audio_buffer.clear()
+
+    def calculate_db_level(self, audio_data: np.ndarray) -> int:
+        rms = np.sqrt(np.mean(np.square(audio_data)))
+        return int(20 * np.log10(rms)) if rms > 0 else -200
+
+
+class SpeechSynthesizer:
+    def __init__(self, vts_talk):
+        self.tts = TTS(model_name="tts_models/en/ljspeech/vits")
+        self.vts_talk = vts_talk
+
+    def speak(self, text: str):
+        if not text:
+            return
+        output_file = "lastVoice.wav"
+        self.tts.tts_to_file(text=text, file_path=output_file)
+        waveform, sample_rate = torchaudio.load(output_file)
+        amplified = torch.clamp(waveform * 2.0, -1.0, 1.0)
+        self.vts_talk.run_sync_mouth(amplified, sample_rate)
+        sd.play(amplified.numpy().T, sample_rate)
+        sd.wait()
+        print("Audio file played")
+
+
+class LLMAgent:
+    def __init__(self, speech_synth: SpeechSynthesizer):
+        self.model = GPT4All(
+            model_name="Llama-3.2-3B-Instruct-Q4_0.gguf",
+            model_path="/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
+        )
+        self.synth = speech_synth
+        self.is_processing = False
+        self.lock = threading.Lock()
+        self.last_response_time = datetime.now()
+
+    def ask(self, text: str):
+        if not text:
+            return
+        with self.lock:
+            self.is_processing = True
+            print(Bcolors.WARNING + "Processing started")
+        try:
+            response = self.model.generate(text, max_tokens=200, n_batch=100, temp=0.8, top_p=0.6, top_k=40)
+            print(Bcolors.OKBLUE + response)
+            self.synth.speak(response)
+        finally:
+            self.last_response_time = datetime.now()
+            self.is_processing = False
+            print(Bcolors.WARNING + "Processing finished")
+
+
+class AudioHandlerThread(threading.Thread):
+    def __init__(self, audio_processor: AudioProcessor, llm_agent: LLMAgent, voice_model, system_prompt):
+        super().__init__(daemon=True)
+        self.audio_processor = audio_processor
+        self.llm_agent = llm_agent
+        self.voice_model = voice_model
+        self.last_chat_message = None
+        self.system_prompt = system_prompt
+
+    def run(self):
+        with self.llm_agent.model.chat_session():
+            self.llm_agent.ask(str(self.system_prompt) + " Stream starting! How are you doing?")
+            while True:
+                if not self.audio_processor.audio_queue.empty() and not self.llm_agent.is_processing:
+                    audio_data = self.audio_processor.audio_queue.get()
+                    segments, _ = self.voice_model.transcribe(audio_data, vad_filter=USE_VAD, language='en')
+                    transcript = " ".join(segment.text for segment in segments)
+                    print(Bcolors.OKGREEN + transcript)
+                    self.llm_agent.ask(f'Artur says: {transcript}')
+
+                elif (datetime.now() - self.audio_processor.last_spoke > timedelta(seconds=3)
+                      and datetime.now() - self.llm_agent.last_response_time > timedelta(seconds=3)
+                      and not self.llm_agent.is_processing and self.last_chat_message):
+                    user, message = self.last_chat_message
+                    self.last_chat_message = None
+                    print(Bcolors.OKCYAN + f'Responding to chat: {user}: {message}')
+                    self.llm_agent.ask(f'{user} says: {message}. If not important, ignore it.')
+
+                elif (datetime.now() - self.audio_processor.last_spoke > timedelta(seconds=3)
+                      and datetime.now() - self.llm_agent.last_response_time > timedelta(seconds=4)
+                      and self.audio_processor.audio_queue.empty() and not self.llm_agent.is_processing):
+                    print(Bcolors.OKCYAN + 'Continuing conversation')
+                    self.llm_agent.ask(
+                        "Stay in character, max 20 words! "
+                        "If you were telling a story, continue. "
+                        "Keep the stream alive as Iara. "
+                        "Improvise with gaming tangents. "
+                        "Hype the 'CapyCrew,' share random game thoughts, or tease chat playfully. "
+                    )
+
+
 class TwitchBot(commands.Bot):
-    """Twitch bot for handling chat interactions."""
-    def __init__(self):
+    def __init__(self, handler_thread: AudioHandlerThread):
         token = os.getenv('TWITCH_OAUTH_TOKEN')
         channel = os.getenv('TWITCH_CHANNEL')
         super().__init__(token=token, prefix='!', initial_channels=[channel])
+        self.handler_thread = handler_thread
 
     async def event_ready(self):
-        """Called when the bot is connected to Twitch."""
         print(f'Bot connected as {self.nick}')
         print(f'Connected to channel: {self.connected_channels}')
 
     async def event_message(self, message):
-        """Handle incoming Twitch chat messages."""
-        global last_chat_message
         if message.echo or message.content.startswith("!"):
             return
-        with lock:
-            last_chat_message = (message.author.name, message.content)
+        with self.handler_thread.audio_processor.lock:
+            self.handler_thread.last_chat_message = (message.author.name, message.content)
         print(f'{message.author.name}: {message.content}')
         await self.handle_commands(message)
 
-def calculate_db_level(audio_data: np.ndarray) -> int:
-    """Calculate the decibel level of audio data."""
-    rms = np.sqrt(np.mean(np.square(audio_data)))
-    return int(20 * np.log10(rms)) if rms > 0 else -200
 
-def text_to_speech(text: str) -> None:
-    """Convert text to speech and play it."""
-    if not text:
-        return
-    output_file = "lastVoice.wav"
-    tts.tts_to_file(text=text, file_path=output_file)
-    waveform, sample_rate = torchaudio.load(output_file)
-    amplified_waveform = torch.clamp(waveform * 2.0, -1.0, 1.0)
-    if vts_talk:
-        vts_talk.run_sync_mouth(amplified_waveform, sample_rate)
-    sd.play(amplified_waveform.numpy().T, sample_rate)
-    sd.wait()
-    print("Audio file played")
+class StreamAssistantApp:
+    def __init__(self, vts_talk):
+        self.audio_processor = AudioProcessor(THRESHOLD_DB, SAMPLE_RATE)
+        self.synth = SpeechSynthesizer(vts_talk)
+        self.llm = LLMAgent(self.synth)
+        self.voice_model = WhisperModel("small.en", cpu_threads=10, local_files_only=True, compute_type="int8_float32")
 
-def ask_llm(text: str) -> None:
-    """Generate a response using the LLM and convert it to speech."""
-    if not text:
-        return
-    global is_processing, last_llm_spoke
-    with lock:
-        is_processing = True
-        print(Bcolors.WARNING + "Processing started")
-    try:
-        response = gpt4all.generate(text, max_tokens=200, n_batch=100, temp=0.8, top_p=0.6, top_k=40)
-        print(Bcolors.OKBLUE + response)
-        text_to_speech(response)
-    finally:
-        last_llm_spoke = datetime.now()
-        is_processing = False
-        print(Bcolors.WARNING + "Processing finished")
-
-def audio_callback(indata, frames, time, status) -> None:
-    """Process incoming audio data from the microphone."""
-    global last_spoke
-    if status:
-        print(status)
-    indata = indata.squeeze()
-    db_level = calculate_db_level(indata)
-    db_level_buffer.add(db_level)
-
-    if db_level_buffer.mean() > THRESHOLD_DB:
-        audio_buffer.extend(indata.tolist())
-        last_spoke = datetime.now()
-
-    if (last_spoke < datetime.now() - timedelta(seconds=2) and
-            audio_buffer and not is_processing):
-        audio_queue.put(np.array(audio_buffer, dtype=np.float32))
-        print(Bcolors.WARNING + "Processing audio file")
-        audio_buffer.clear()
-
-def process_audio() -> None:
-    """Process audio from queue and respond to chat messages."""
-    global last_chat_message, last_llm_spoke
-    with gpt4all.chat_session():
-        ask_llm(SYSTEM_PROMPT.__str__() + " Stream starting! How are you doing?")
-
-        while True:
-            if not audio_queue.empty() and not is_processing:
-                audio_data = audio_queue.get()
-                segments, _ = voice_model.transcribe(audio_data, vad_filter=USE_VAD, language='en')
-                transcript = " ".join(segment.text for segment in segments)
-                print(Bcolors.OKGREEN + transcript)
-                ask_llm(f'Artur says: {transcript}')
-
-            elif (last_spoke < datetime.now() - timedelta(seconds=3) and
-                  last_llm_spoke < datetime.now() - timedelta(seconds=3) and
-                  not is_processing and last_chat_message):
-                user, message = last_chat_message
-                last_chat_message = None
-                print(Bcolors.OKCYAN + f'Responding to chat: {user}: {message}')
-                ask_llm(f'{user} says: {message}. If not important, ignore it.')
-
-            elif (last_spoke < datetime.now() - timedelta(seconds=3) and
-                  last_llm_spoke < datetime.now() - timedelta(seconds=4) and
-                  audio_queue.empty() and not is_processing):
-                print(Bcolors.OKCYAN + 'Continuing conversation')
-                ask_llm(f" keep the stream alive as Iara. Improvise with gaming tangents, capybara banter, or samba vibes. "
-    "Hype the 'CapyCrew,' share random game thoughts, or tease chat playfully, e.g. "
-    "Stay in character, keep responses short (max 20 words!), and maintain Brazilian flair and charm. do not repeat your last message!")
-
-async def run_twitch_bot() -> None:
-    """Run the Twitch bot."""
-    bot = TwitchBot()
-    await bot.start()
-
-def start_listening() -> None:
-    """Start the audio listener and Twitch bot."""
-    global vts_talk
+def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
+    # Inicializar VTubeStudioTalk
     vts_talk = VTubeStudioTalk(loop)
     loop.run_until_complete(vts_talk.connect())
-    threading.Thread(
-        target=lambda: loop.run_until_complete(run_twitch_bot()),
-        daemon=True
-    ).start()
 
-    time.sleep(2)  # Wait for Twitch bot initialization
-    with sd.InputStream(
-            callback=audio_callback,
-            channels=1,
-            samplerate=SAMPLE_RATE,
-            dtype='float32'
-    ):
-        print(Bcolors.OKGREEN + "System initialized")
-        process_audio()
+    # Inicializar componentes principais
+    app = StreamAssistantApp(vts_talk)
+    app.handler_thread = AudioHandlerThread(
+        audio_processor=app.audio_processor,
+        llm_agent=app.llm,
+        voice_model=app.voice_model,
+        system_prompt=SYSTEM_PROMPT,
+    )
+    app.handler_thread.start()
+
+    # Iniciar captura de áudio
+    with sd.InputStream(callback=app.audio_processor.callback,
+                        channels=1,
+                        samplerate=SAMPLE_RATE):
+        print("Captura de áudio iniciada...")
+
+        # Iniciar bot da Twitch
+        bot = TwitchBot(handler_thread=app.handler_thread)
+        loop.run_until_complete(bot.run())
+
 
 if __name__ == "__main__":
-    try:
-        start_listening()
-    finally:
-        if vts_talk:
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(vts_talk.disconnect())
+    main()
