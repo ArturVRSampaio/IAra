@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import asyncio
 import numpy as np
 import sounddevice as sd
-import torch
 import torchaudio
 from dotenv import load_dotenv
 from gpt4all import GPT4All
@@ -74,7 +73,7 @@ class AudioProcessor:
     def __init__(self, threshold_db, sample_rate):
         self.threshold_db = threshold_db
         self.sample_rate = sample_rate
-        self.db_level_buffer = CircularList(40)
+        self.db_level_buffer = CircularList(15)
         self.audio_buffer = []
         self.last_spoke = datetime.now()
         self.audio_queue = queue.Queue()
@@ -113,9 +112,8 @@ class SpeechSynthesizer:
         output_file = "lastVoice.wav"
         self.tts.tts_to_file(text=text, file_path=output_file)
         waveform, sample_rate = torchaudio.load(output_file)
-        amplified = torch.clamp(waveform * 2.0, -1.0, 1.0)
-        self.vts_talk.run_sync_mouth(amplified, sample_rate)
-        sd.play(amplified.numpy().T, sample_rate)
+        self.vts_talk.run_sync_mouth(waveform, sample_rate)
+        sd.play(waveform.numpy().T, sample_rate)
         sd.wait()
         print("Audio file played")
 
@@ -123,6 +121,7 @@ class SpeechSynthesizer:
 class LLMAgent:
     def __init__(self, speech_synth: SpeechSynthesizer):
         self.model = GPT4All(
+            n_threads=8,
             model_name="Llama-3.2-3B-Instruct-Q4_0.gguf",
             model_path="/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
         )
@@ -180,10 +179,12 @@ class AudioHandlerThread(threading.Thread):
                       and self.audio_processor.audio_queue.empty() and not self.llm_agent.is_processing):
                     print(Bcolors.OKCYAN + 'Continuing conversation')
                     self.llm_agent.ask(
+                        "keep talking in english! "
                         "Stay in character, max 20 words! "
                         "If you were telling a story, continue. "
                         "Keep the stream alive as Iara. "
                         "Improvise with gaming tangents. "
+                        "if you have not done it yet, remember to ask CapyCrew to follow and subscribe @arturVRSampaio"
                         "Hype the 'CapyCrew,' share random game thoughts, or tease chat playfully. "
                     )
 
@@ -213,7 +214,10 @@ class StreamAssistantApp:
         self.audio_processor = AudioProcessor(THRESHOLD_DB, SAMPLE_RATE)
         self.synth = SpeechSynthesizer(vts_talk)
         self.llm = LLMAgent(self.synth)
-        self.voice_model = WhisperModel("small.en", cpu_threads=10, local_files_only=True, compute_type="int8_float32")
+        self.voice_model = WhisperModel("turbo",
+                                        cpu_threads=8,
+                                        local_files_only=False,
+                                        compute_type="int8_float32")
 
 def main():
     loop = asyncio.new_event_loop()
