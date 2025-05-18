@@ -55,6 +55,7 @@ class LLMAgent:
                                            top_p=0.6,
                                            top_k=1)
             print(Bcolors.OKBLUE + response)
+            self.is_processing = False
             return str(response)
         except:
             self.last_response_time = datetime.now()
@@ -76,7 +77,10 @@ class DiscordBot(commands.Cog):
         self.processing_tasks = {}    # user_id -> Task
         self.pcm_buffers = {}         # user_id -> list of PCM bytes
         self.loop = None
-        self.model = WhisperModel("base")
+        self.model = WhisperModel("tiny",
+                                        cpu_threads=8,
+                                        local_files_only=False,
+                                        compute_type="int8_float32")
         self.last_audio_time = {}     # user_id -> last audio packet timestamp
         self.ctx = None               # Store context for sending messages
         self.voice_client = None      # Store voice client for playback
@@ -167,6 +171,7 @@ class DiscordBot(commands.Cog):
     async def test(self, ctx: Context):
         self.ctx = ctx  # Store the context
         def callback(user, data: voice_recv.VoiceData):
+            print('voice_data received, user ' + str(user))
             if user not in self.audio_buffers:
                 self.audio_buffers[user] = asyncio.Queue()
                 self.processing_tasks[user] = self.loop.create_task(
@@ -176,7 +181,7 @@ class DiscordBot(commands.Cog):
 
         self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
         self.voice_client.listen(voice_recv.BasicSink(callback))
-        await ctx.send("Bot conectado ao canal de voz! Transcrevendo fala após pausas de 2 segundos.")
+        await ctx.send("Bot conectado ao canal de voz!")
 
     @commands.command()
     async def stop(self, ctx: Context):
