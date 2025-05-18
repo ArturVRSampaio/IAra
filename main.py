@@ -137,7 +137,12 @@ class LLMAgent:
             self.is_processing = True
             print(Bcolors.WARNING + "Processing started")
         try:
-            response = self.model.generate(text, max_tokens=200, n_batch=100, temp=0.8, top_p=0.6, top_k=40)
+            response = self.model.generate(text,
+                                           max_tokens=200,
+                                           n_batch=16,
+                                           temp=0.8,
+                                           top_p=0.6,
+                                           top_k=1)
             print(Bcolors.OKBLUE + response)
             self.synth.speak(response)
         finally:
