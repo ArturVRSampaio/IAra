@@ -1,40 +1,31 @@
 import asyncio
 import time
 import numpy as np
+import pyvts
 import torch
-import torchaudio
-from pyvts import vts
 from Bcolors import Bcolors
 
 # VTube Studio plugin info
-PLUGIN_INFO = {
+plugin_info = {
     "plugin_name": "Iara VTuber",
     "developer": "Artur",
     "authentication_token_path": "./token.txt"
 }
 
-
 class VTubeStudioTalk:
     """Manages VTube Studio connection and mouth animation synchronization."""
 
     def __init__(self, loop: asyncio.AbstractEventLoop):
-        self.vts = None
+        self.vts = pyvts.vts(plugin_info=plugin_info)
         self.loop = loop
 
     async def connect(self):
         """Initialize and authenticate VTube Studio connection."""
-        self.vts = vts(plugin_info=PLUGIN_INFO)
         await self.vts.connect()
         await self.vts.request_authenticate_token()
-        await self.vts.request_authenticate()
-        print(Bcolors.OKGREEN + "VTube Studio connected")
+        is_auth = await self.vts.request_authenticate()
+        print(Bcolors.OKGREEN + "VTube Studio connected : " + str(is_auth))
 
-    async def disconnect(self):
-        """Close VTube Studio connection."""
-        if self.vts:
-            await self.vts.close()
-            self.vts = None
-            print(Bcolors.OKGREEN + "VTube Studio disconnected")
 
     def get_audio_intensity(self, waveform: torch.Tensor, sample_rate: int, block_duration: float = 0.05) -> list:
         """Calculate audio intensity for each block."""
@@ -49,21 +40,20 @@ class VTubeStudioTalk:
 
     async def sync_mouth(self, waveform: torch.Tensor, sample_rate: int):
         """Sync VTube Studio mouth animation with audio."""
-        if not self.vts:
-            print(Bcolors.WARNING + "VTube Studio not connected")
-            return
 
         intensities = self.get_audio_intensity(waveform, sample_rate, block_duration=0.05)
         start_time = time.time()
 
         for intensity in intensities:
-            mouth_open_value = min(max(intensity * 10, 0), 1)  # Adjust scaling factor as needed
+            mouth_open_value = float(min(max(intensity * 10, 0), 1))
             request_msg = self.vts.vts_request.requestSetParameterValue(
                 parameter="MouthOpen",
                 value=mouth_open_value,
                 weight=1.0
             )
+
             await self.vts.request(request_msg)
+
             elapsed_time = time.time() - start_time
             expected_time = (intensities.index(intensity) + 1) * 0.05
             sleep_time = max(0, expected_time - elapsed_time)

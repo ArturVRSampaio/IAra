@@ -1,18 +1,18 @@
 import pyvts
 import asyncio
-import sounddevice as sd
 import numpy as np
 from pydub import AudioSegment
 from pydub.playback import play
 import time
 import threading
 
+# IF THIS STUPID CONNECTION WONT WORK, TRY TO FORCE THE TOKEN GENERATOR!!
+
 plugin_info = {
-    "plugin_name": "start pyvts",
-    "developer": "Genteki",
+    "plugin_name": "Iara VTuber",
+    "developer": "Artur",
     "authentication_token_path": "./token.txt"
 }
-
 
 # Função para carregar o áudio
 def load_audio(file_path):
@@ -61,7 +61,7 @@ async def main():
     start_time = time.time()
     for intensity in intensities:
         # Normalizar a intensidade para o parâmetro MouthOpen (0 a 1)
-        mouth_open_value = min(max(intensity * 10, 0), 1)  # Ajuste o fator 10 conforme necessário
+        mouth_open_value = float(min(max(intensity * 10, 0), 1))  # Ajuste o fator 10 conforme necessário
 
         # Enviar comando para abrir/fechar a boca
         request_msg = vts.vts_request.requestSetParameterValue(
