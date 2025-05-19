@@ -151,27 +151,40 @@ class DiscordBot(commands.Cog):
             await self.ctx.send(f"Erro ao tocar o áudio: {str(e)}")
             print(f"Erro ao tocar test.wav: {e}")
 
+    async def process_user_transcription(self, user, semaphore):
+        async with semaphore:
+            user_transcript = await self.transcribe_audio(user)
+            self.pcm_buffers[user] = []
+            if user_transcript:
+                user_result = f"\n user: {user} says: {user_transcript}"
+                print(f"[TRANSCRIÇÃO] {user}:\n{user_result}\n")
+                if self.ctx:
+                    await self.ctx.send(f"**{user}**: {user_result}")
+                return user_result
+            return ""
+
+    async def process_all_transcriptions(self, semaphore):
+        transcript = ""
+        tasks = [self.process_user_transcription(user, semaphore) for user in self.pcm_buffers.keys()]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, str) and result:
+                transcript += result
+        return transcript
+
     async def process_audio(self):
         while self.last_audio_time is not None:  # Continue until stopped
             current_time = datetime.now()
-            # Check if 2 seconds have passed since last audio and LLM is not processing
             if (self.last_audio_time is not None and
                     self.pcm_buffers and
                     current_time - self.last_audio_time >= timedelta(seconds=1) and
                     not self.llm.is_processing):
-                # Process audio for each user with buffered data
-                transcript=""
-                for user in list(self.pcm_buffers.keys()):
-                    user_transcript = await self.transcribe_audio(user)
-                    if user_transcript:
-                        transcript += "\n user: " + str(user) + " says: " + user_transcript
-                        print(f"[TRANSCRIÇÃO] {user}:\n{transcript}\n")
-                    if self.ctx:
-                        await self.ctx.send(f"**{user}**: {transcript}")
-                    self.pcm_buffers[user] = []
+                # Process audio for all users with buffered data in parallel
+                semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent tasks
+                transcript = await self.process_all_transcriptions(semaphore)
 
-                if self.ctx:
-                    await self.ctx.send(f"**full transcript: **: {transcript}")
+                if self.ctx and transcript:
+                    await self.ctx.send(f"**full transcript**: {transcript}")
                     llm_response = self.llm.ask(transcript)
                     if llm_response:
                         await self.ctx.send(f"**IAra**: {llm_response}")
