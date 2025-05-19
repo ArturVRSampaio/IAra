@@ -157,7 +157,7 @@ class DiscordBot(commands.Cog):
             # Check if 2 seconds have passed since last audio and LLM is not processing
             if (self.last_audio_time is not None and
                     self.pcm_buffers and
-                    current_time - self.last_audio_time >= timedelta(seconds=2) and
+                    current_time - self.last_audio_time >= timedelta(seconds=1) and
                     not self.llm.is_processing):
                 # Process audio for each user with buffered data
                 transcript=""
