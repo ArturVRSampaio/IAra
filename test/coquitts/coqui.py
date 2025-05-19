@@ -3,7 +3,10 @@ import sounddevice as sd
 import torchaudio
 from TTS.api import TTS
 
-tts = TTS("tts_models/en/ljspeech/vits", progress_bar=True, gpu=(torch.cuda.is_available()))
+
+print(TTS().list_models())
+
+tts = TTS("tts_models/multilingual/multi-dataset/your_tts", progress_bar=True,  )
 
 print(tts.speakers)
 print('model loaded')
@@ -13,6 +16,7 @@ text = "It took me quite a long time to develop a voice, and now that I have it 
 
 tts.tts_to_file(
     text=text,
+    speaker=tts.speakers[0],
     file_path="output.wav",
     split_sentences=True
 )

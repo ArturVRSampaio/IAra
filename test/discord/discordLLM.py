@@ -1,10 +1,8 @@
 import asyncio
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
-
-import torchaudio
 from TTS.api import TTS
 from dotenv import load_dotenv
 import discord
@@ -13,21 +11,38 @@ from discord.ext.commands.context import Context
 from faster_whisper import WhisperModel
 from gpt4all import GPT4All
 from pydub import AudioSegment
-
+from pydub.effects import low_pass_filter
 from Bcolors import Bcolors
 
 load_dotenv()
 
 class SpeechSynthesizer:
     def __init__(self):
-        self.tts = TTS(model_name="tts_models/en/ljspeech/vits")
+        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=True, gpu=False)
+        print("Available speakers:", self.tts.speakers)  # Debug: List speakers
 
-    def generateTtsFile(self, text: str):
+    def generateTtsFile(self, text: str, speed: float = 1.1):
         if not text:
             return
         output_file = "lastVoice.wav"
-        self.tts.tts_to_file(text=text, file_path=output_file)
-        print("Audio file saved")
+        temp_file = "temp_voice.wav"  # Temporary file for initial synthesis
+        low_pass_cutoff: float = 5000
+
+        # Generate the TTS audio
+        self.tts.tts_to_file(
+            text=text,
+            language="pt-br",  # Use "pt" (YourTTS may not recognize "pt-br")
+            speaker=self.tts.speakers[2],  # Ensure speaker index is valid
+            file_path=temp_file
+        )
+
+        # Speed up the audio
+        audio = AudioSegment.from_wav(temp_file)
+        audio = low_pass_filter(audio, cutoff=low_pass_cutoff)
+        sped_up_audio = audio.speedup(playback_speed=speed, chunk_size=150, crossfade=25)
+        sped_up_audio.export(output_file, format="wav")
+        os.remove(temp_file)  # Clean up temporary file
+        print("Audio file saved with speed adjustment")
 
 
 class LLMAgent:
@@ -55,36 +70,51 @@ class LLMAgent:
                                            top_p=0.6,
                                            top_k=1)
             print(Bcolors.OKBLUE + response)
-            self.is_processing = False
             return str(response)
         except:
             self.last_response_time = datetime.now()
-            self.is_processing = False
             print(Bcolors.WARNING + "Processing finished")
             return ""
 
 
-
 class DiscordBot(commands.Cog):
-    def __init__(self,
-                 bot,
-                 llm: LLMAgent,
-                 speech_synth: SpeechSynthesizer):
+    def __init__(self, bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
         self.llm = llm
         self.synth = speech_synth
         self.bot = bot
-        self.audio_buffers = {}       # user_id -> asyncio.Queue
-        self.processing_tasks = {}    # user_id -> Task
-        self.pcm_buffers = {}         # user_id -> list of PCM bytes
+        self.pcm_buffers = {}  # user_id -> list of PCM bytes
+        self.last_audio_time = None  # Timestamp of last audio packet from any user
+        self.processing_task = None  # Single task for processing audio
         self.loop = None
-        self.model = WhisperModel("tiny",
-                                        cpu_threads=8,
-                                        local_files_only=False,
-                                        compute_type="int8_float32")
-        self.last_audio_time = {}     # user_id -> last audio packet timestamp
-        self.ctx = None               # Store context for sending messages
-        self.voice_client = None      # Store voice client for playback
+        self.model = WhisperModel("turbo",
+                                  cpu_threads=8,
+                                  local_files_only=False,
+                                  compute_type="int8_float32")
+        self.ctx = None  # Store context for sending messages
+        self.voice_client = None  # Store voice client for playback
 
+    async def transcribe_audio(self, user) -> str:
+        print("transcribe audio")
+        pcm_chunks = self.pcm_buffers.get(user, [])
+        if not pcm_chunks:
+            return ""
+
+        raw_pcm = b''.join(pcm_chunks)
+
+        audio = AudioSegment(
+            data=raw_pcm,
+            sample_width=2,
+            frame_rate=48000,
+            channels=2
+        ).set_channels(1)  # Whisper works better with mono
+
+        wav_buffer = BytesIO()
+        audio.export(wav_buffer, format="wav")
+        wav_buffer.seek(0)
+
+        segments, _ = self.model.transcribe(wav_buffer, language='pt')
+        transcript = ''.join([seg.text for seg in segments])
+        return transcript.strip()
 
     async def playAudio(self):
         if not self.voice_client or not self.voice_client.is_connected():
@@ -102,114 +132,72 @@ class DiscordBot(commands.Cog):
                 executable="ffmpeg"  # Ensure FFmpeg is in PATH or specify full path
             )
 
+            # Create an event to signal when playback is complete
+            playback_done = asyncio.Event()
+
+            def after_playback(error):
+                if error:
+                    print(f"Erro durante a reprodução: {error}")
+                asyncio.run_coroutine_threadsafe(playback_done.set(), self.loop)
+
             # Play the audio
             if not self.voice_client.is_playing():
-                self.voice_client.play(audio_source)
+                self.voice_client.play(audio_source, after=after_playback)
                 await self.ctx.send("Tocando no canal de voz!")
+                await playback_done.wait()  # Wait until playback is complete
             else:
                 await self.ctx.send("O bot já está tocando um áudio. Aguarde até terminar!")
         except Exception as e:
             await self.ctx.send(f"Erro ao tocar o áudio: {str(e)}")
             print(f"Erro ao tocar test.wav: {e}")
 
-    async def process_audio(self, user):
-        queue = self.audio_buffers[user]
-        self.pcm_buffers[user] = []
-        self.last_audio_time[user] = asyncio.get_event_loop().time()
-
-        while True:
-            try:
-                # Wait for audio data with a 2-second timeout
-                data = await asyncio.wait_for(queue.get(), timeout=2.0)
-                if data is None:
-                    break
-                self.pcm_buffers[user].append(data.pcm)
-                self.last_audio_time[user] = asyncio.get_event_loop().time()
-            except asyncio.TimeoutError:
-                # If 2 seconds have passed without new audio, transcribe
-                if self.pcm_buffers[user] and self.llm.is_processing == False:
-                    transcript = await self.transcribe_audio(user)
-
-                    if transcript:
+    async def process_audio(self):
+        while self.last_audio_time is not None:  # Continue until stopped
+            current_time = datetime.now()
+            # Check if 2 seconds have passed since last audio and LLM is not processing
+            if (self.last_audio_time is not None and
+                    self.pcm_buffers and
+                    current_time - self.last_audio_time >= timedelta(seconds=2) and
+                    not self.llm.is_processing):
+                # Process audio for each user with buffered data
+                transcript=""
+                for user in list(self.pcm_buffers.keys()):
+                    user_transcript = await self.transcribe_audio(user)
+                    if user_transcript:
+                        transcript += "\n user: " + str(user) + " says: " + user_transcript
                         print(f"[TRANSCRIÇÃO] {user}:\n{transcript}\n")
-                        if self.ctx:
-                            await self.ctx.send(f"**{user}**: {transcript}")
-                            llm_response = self.llm.ask(transcript)
-                            if llm_response:
-                                await self.ctx.send(f"**IAra**: {llm_response}")
-                                self.synth.generateTtsFile(llm_response)
-                                await self.playAudio()
+                    if self.ctx:
+                        await self.ctx.send(f"**{user}**: {transcript}")
+                    self.pcm_buffers[user] = []
 
-                    self.pcm_buffers[user] = []  # Clear buffer after transcription
-                continue
+                if self.ctx:
+                    await self.ctx.send(f"**full transcript: **: {transcript}")
+                    llm_response = self.llm.ask(transcript)
+                    if llm_response:
+                        await self.ctx.send(f"**IAra**: {llm_response}")
+                        self.synth.generateTtsFile(llm_response)
+                        await self.playAudio()
 
-    async def transcribe_audio(self, user):
-        pcm_chunks = self.pcm_buffers.get(user, [])
-        if not pcm_chunks:
-            return
-
-        raw_pcm = b''.join(pcm_chunks)
-
-        audio = AudioSegment(
-            data=raw_pcm,
-            sample_width=2,
-            frame_rate=48000,
-            channels=2
-        ).set_channels(1)  # Whisper works better with mono
-
-        wav_buffer = BytesIO()
-        audio.export(wav_buffer, format="wav")
-        wav_buffer.seek(0)
-
-        segments, _ = self.model.transcribe(wav_buffer)
-        transcript = ''.join([seg.text for seg in segments])
-        return transcript.strip()
-
-
+                    self.llm.is_processing = False
+            await asyncio.sleep(0.1)  # Sleep briefly to avoid busy-waiting
 
     @commands.command()
     async def test(self, ctx: Context):
         self.ctx = ctx  # Store the context
+
         def callback(user, data: voice_recv.VoiceData):
             print('voice_data received, user ' + str(user))
-            if user not in self.audio_buffers:
-                self.audio_buffers[user] = asyncio.Queue()
-                self.processing_tasks[user] = self.loop.create_task(
-                    self.process_audio(user)
-                )
-            self.audio_buffers[user].put_nowait(data)
+            if user not in self.pcm_buffers:
+                self.pcm_buffers[user] = []
+            self.pcm_buffers[user].append(data.pcm)
+            self.last_audio_time = datetime.now()
+            # Start processing task if not already running
+            if self.processing_task is None or self.processing_task.done():
+                self.processing_task = self.loop.create_task(self.process_audio())
 
         self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
         self.voice_client.listen(voice_recv.BasicSink(callback))
         await ctx.send("Bot conectado ao canal de voz!")
-
-    @commands.command()
-    async def stop(self, ctx: Context):
-        # Signal all audio processing to stop
-        for queue in self.audio_buffers.values():
-            queue.put_nowait(None)
-
-        # Wait for processing tasks to complete
-        for task in self.processing_tasks.values():
-            await task
-
-        # Stop any playing audio
-        if self.voice_client and self.voice_client.is_playing():
-            self.voice_client.stop()
-
-        # Clean up
-        self.audio_buffers.clear()
-        self.processing_tasks.clear()
-        self.pcm_buffers.clear()
-        self.last_audio_time.clear()
-        self.ctx = None
-
-        if self.voice_client and self.voice_client.is_connected():
-            await self.voice_client.disconnect()
-            self.voice_client = None
-            await ctx.send("Bot desconectado do canal de voz.")
-        else:
-            await ctx.send("Bot não está em um canal de voz.")
 
     async def cog_load(self):
         self.loop = asyncio.get_running_loop()
