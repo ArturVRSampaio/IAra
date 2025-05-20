@@ -5,12 +5,18 @@ from gpt4all import GPT4All
 model_name = "Llama-3.2-1B-Instruct-Q4_0.gguf"
 model_path = "/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
 
-gpt4all = GPT4All(model_name, model_path=model_path, device='kompute')
+gpt4all = GPT4All(model_name,
+                  model_path=model_path,
+                  device='cpu')
 
 text = "tell me a history about a big castle"
 start = time.time()
 
-response = gpt4all.generate(text, max_tokens=200, n_batch=60, temp=0.8, streaming=False)
+response = gpt4all.generate(text,
+                            max_tokens=200,
+                            n_batch=8,
+                            temp=0.8,
+                            streaming=False)
 
 end = time.time()
 print("time: " + str(end - start))
