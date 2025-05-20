@@ -89,14 +89,16 @@ class SpeechSynthesizer:
 class LLMAgent:
     def __init__(self):
         self.url = "http://localhost:4891/v1/chat/completions"
-        self.headers = {
-            'Content-Type': 'application/json'
-        }
-
+        self.headers = {'Content-Type': 'application/json'}
         self.is_processing = False
         self.lock = threading.Lock()
         self.last_response_time = datetime.now()
 
+        # Maintain context
+        self.chat_history = [
+            {"role": "system", "content": str(SYSTEM_PROMPT)},
+            {"role": "user", "content": "you are about to enter the discord call"}
+        ]
 
     def ask(self, text: str) -> str:
         if not text:
@@ -105,23 +107,30 @@ class LLMAgent:
         with self.lock:
             self.is_processing = True
         try:
-            # Dados para enviar na requisição POST
+            # Add new user message to history
+            self.chat_history.append({"role": "user", "content": text})
+
             data = {
                 "model": "Llama-3.2-3B-Instruct-Q4_0.gguf",
-                "messages": [{"role": "user", "content": text}],
+                "messages": self.chat_history,
                 "max_tokens": 200,
                 "n": 1,
                 "temperature": 0.8,
                 "stream": False
             }
+
             response = requests.post(self.url, headers=self.headers, data=json.dumps(data))
             response.raise_for_status()
             result = response.json()
             iara_response = result['choices'][0]['message']['content']
 
+            # Add assistant response to history
+            self.chat_history.append({"role": "assistant", "content": iara_response})
+
             print(Bcolors.OKBLUE + iara_response)
-            return str(iara_response)
-        except:
+            return iara_response
+        except Exception as e:
+            print("LLM ERROR:", e)
             self.last_response_time = datetime.now()
             return ""
 
