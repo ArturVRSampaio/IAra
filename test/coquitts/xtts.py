@@ -3,8 +3,7 @@ from TTS.api import TTS
 from safetensors import torch
 import sounddevice as sd
 
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
-
+tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to('cpu')
 
 text = "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent."
 
