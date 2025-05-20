@@ -13,7 +13,7 @@ text = "tell me a history about a big castle"
 
 # Dados para enviar na requisição POST
 data = {
-    "model": "Llama-3.2-3B-Instruct-Q4_0.gguf",
+    "model": "IAra",
     "messages": [{"role": "user", "content": text}],
     "max_tokens": 200,
     "n": 1,

@@ -110,7 +110,7 @@ class LLMAgent:
             self.chat_history.append({"role": "user", "content": text})
 
             data = {
-                "model": "Llama-3.2-3B-Instruct-Q4_0.gguf",
+                "model": "IAra",
                 "messages": self.chat_history,
                 "max_tokens": 200,
                 "n": 1,
