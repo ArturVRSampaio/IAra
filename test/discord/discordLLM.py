@@ -144,10 +144,7 @@ class DiscordBot(commands.Cog):
         self.processing_task = None  # Single task for processing audio
         self.loop = None
         self.model = WhisperModel("turbo",
-                                  device='cuda',
-                                  local_files_only=False,
-                                  compute_type="int8_float32",
-                                  num_workers=10)
+                                  device='cuda')
         self.ctx = None  # Store context for sending messages
         self.voice_client = None  # Store voice client for playback
 
