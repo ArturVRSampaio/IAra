@@ -1,8 +1,11 @@
 import asyncio
+import json
 import os
 import threading
 from datetime import datetime, timedelta
 from io import BytesIO
+
+import requests
 from TTS.api import TTS
 from dotenv import load_dotenv
 import discord
@@ -85,11 +88,11 @@ class SpeechSynthesizer:
 
 class LLMAgent:
     def __init__(self):
-        self.model = GPT4All(
-            model_name="Llama-3.2-3B-Instruct-Q4_0.gguf",
-            model_path="C:/Users/agath/AppData/Local/nomic.ai/GPT4All/",
-            device='kompute'
-        )
+        self.url = "http://localhost:4891/v1/chat/completions"
+        self.headers = {
+            'Content-Type': 'application/json'
+        }
+
         self.is_processing = False
         self.lock = threading.Lock()
         self.last_response_time = datetime.now()
@@ -99,19 +102,25 @@ class LLMAgent:
         if not text:
             return ""
 
-        text = text
-
         with self.lock:
             self.is_processing = True
         try:
-            response = self.model.generate(text,
-                                           max_tokens=200,
-                                           n_batch=16,
-                                           temp=0.8,
-                                           top_p=0.6,
-                                           top_k=1)
-            print(Bcolors.OKBLUE + response)
-            return str(response)
+            # Dados para enviar na requisição POST
+            data = {
+                "model": "Llama-3.2-3B-Instruct-Q4_0.gguf",
+                "messages": [{"role": "user", "content": text}],
+                "max_tokens": 200,
+                "n": 1,
+                "temperature": 0.8,
+                "stream": False
+            }
+            response = requests.post(self.url, headers=self.headers, data=json.dumps(data))
+            response.raise_for_status()
+            result = response.json()
+            iara_response = result['choices'][0]['message']['content']
+
+            print(Bcolors.OKBLUE + iara_response)
+            return str(iara_response)
         except:
             self.last_response_time = datetime.now()
             return ""
@@ -134,7 +143,7 @@ class DiscordBot(commands.Cog):
         self.ctx = None  # Store context for sending messages
         self.voice_client = None  # Store voice client for playback
 
-    async def transcribe_audio(self, user) -> str:
+    def transcribe_audio(self, user) -> str:
         print("transcribe audio")
         pcm_chunks = self.pcm_buffers.get(user, [])
         if not pcm_chunks:
@@ -164,7 +173,7 @@ class DiscordBot(commands.Cog):
         try:
             audio_file = "lastVoice.wav"
             if not os.path.exists(audio_file):
-                asyncio.create_task(self.ctx.send("Arquivo test.wav não encontrado!"))
+                await self.ctx.send("Arquivo lastVoice.wav não encontrado!")
                 return
 
             # Create audio source
@@ -179,18 +188,18 @@ class DiscordBot(commands.Cog):
             def after_playback(error):
                 if error:
                     print(f"Erro durante a reprodução: {error}")
-                asyncio.run_coroutine_threadsafe(playback_done.set(), self.loop)
+                self.loop.call_soon_threadsafe(playback_done.set)
 
             # Play the audio
             if not self.voice_client.is_playing():
                 self.voice_client.play(audio_source, after=after_playback)
-                asyncio.create_task(self.ctx.send("Tocando no canal de voz!"))
+                await self.ctx.send("Tocando no canal de voz!")
                 await playback_done.wait()  # Wait until playback is complete
             else:
                 await self.ctx.send("O bot já está tocando um áudio. Aguarde até terminar!")
         except Exception as e:
             await self.ctx.send(f"Erro ao tocar o áudio: {str(e)}")
-            print(f"Erro ao tocar test.wav: {e}")
+            print(f"Erro ao tocar lastVoice.wav: {e}")
 
     async def process_audio(self):
         while self.last_audio_time is not None:  # Continue until stopped
@@ -203,13 +212,14 @@ class DiscordBot(commands.Cog):
 
                 transcript=""
                 for user in list(self.pcm_buffers.keys()):
-                    user_transcript = await self.transcribe_audio(user)
+                    user_transcript = self.transcribe_audio(user)
                     if user_transcript:
                         transcript += str(user) + " says: " + user_transcript + "\n"
                         print(f"[TRANSCRIÇÃO] {user}:\n{transcript}\n")
                     if self.ctx:
                         await self.ctx.send(f"**{user}**: {transcript}")
-                    self.pcm_buffers[user] = []
+
+                self.pcm_buffers.clear()
 
                 if self.ctx and transcript:
                     asyncio.create_task(self.ctx.send(f"===============================================\n "
@@ -223,6 +233,7 @@ class DiscordBot(commands.Cog):
                                                           f"==============================================="))
                         self.synth.generateTtsFile(llm_response)
                         await self.playAudio()
+                self.llm.is_processing=False
 
             await asyncio.sleep(0.1)  # Sleep briefly to avoid busy-waiting
 
