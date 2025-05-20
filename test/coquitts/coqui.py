@@ -28,11 +28,5 @@ end = time.time()
 print("time: " + str(end - start))
 
 waveform, sample_rate = torchaudio.load("output.wav")
-gain = 3.0  # Adjust this value (e.g., 1.5, 2.0, 3.0) to increase volume
-amplified_waveform = waveform * gain
-
-amplified_waveform = torch.clamp(amplified_waveform, -1.0, 1.0)
-
-sd.play(amplified_waveform.numpy().T, sample_rate)
+sd.play(waveform, sample_rate)
 sd.wait()
-print("Amplified audio file 'output.wav' has been played successfully!")

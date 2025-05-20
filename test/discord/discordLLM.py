@@ -12,7 +12,6 @@ import discord
 from discord.ext import commands, voice_recv
 from discord.ext.commands.context import Context
 from faster_whisper import WhisperModel
-from gpt4all import GPT4All
 from pydub import AudioSegment
 
 from Bcolors import Bcolors
