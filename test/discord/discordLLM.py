@@ -78,7 +78,7 @@ class SpeechSynthesizer:
         self.tts.tts_to_file(
             text=text,
             language="en", #pt-br or en
-            speaker=self.tts.speakers[2],
+            speaker=self.tts.speakers[1],
             file_path=output_file
         )
 
