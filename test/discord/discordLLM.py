@@ -65,7 +65,7 @@ SYSTEM_PROMPT = {
 
 class SpeechSynthesizer:
     def __init__(self):
-        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=True).to('cpu')
+        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=True).to('cuda')
 
     def generateTtsFile(self, text: str):
         if not text:
@@ -87,8 +87,8 @@ class LLMAgent:
     def __init__(self):
         self.model = GPT4All(
             model_name="Llama-3.2-3B-Instruct-Q4_0.gguf",
-            model_path="/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/",
-            device='cpu'
+            model_path="C:/Users/agath/AppData/Local/nomic.ai/GPT4All/",
+            device='kompute'
         )
         self.is_processing = False
         self.lock = threading.Lock()
@@ -127,7 +127,7 @@ class DiscordBot(commands.Cog):
         self.processing_task = None  # Single task for processing audio
         self.loop = None
         self.model = WhisperModel("turbo",
-                                  cpu_threads=4,
+                                  device='cuda',
                                   local_files_only=False,
                                   compute_type="int8_float32",
                                   num_workers=10)

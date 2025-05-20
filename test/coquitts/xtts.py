@@ -1,9 +1,11 @@
+import time
+
 import torchaudio
 from TTS.api import TTS
 from safetensors import torch
 import sounddevice as sd
 
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to('cpu')
+tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to('cuda')
 
 text = "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent."
 
@@ -11,7 +13,7 @@ text = "It took me quite a long time to develop a voice, and now that I have it 
 print(tts.speakers)
 print('model loaded')
 
-
+start = time.time()
 tts.tts_to_file(text=text,
                 file_path="output.wav",
                 speaker=tts.speakers[0],
@@ -19,6 +21,8 @@ tts.tts_to_file(text=text,
                 split_sentences=True
                 )
 
+end = time.time()
+print("time: " + str(end - start))
 
 waveform, sample_rate = torchaudio.load("output.wav")
 # gain = 3.0  # Adjust this value (e.g., 1.5, 2.0, 3.0) to increase volume
