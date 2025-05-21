@@ -77,9 +77,10 @@ class SpeechSynthesizer:
         # Generate the TTS audio
         self.tts.tts_to_file(
             text=text,
-            language="en", #pt-br or en
-            speaker=self.tts.speakers[1],
-            file_path=output_file
+            language="pt-br", #pt-br or en
+            speaker=self.tts.speakers[2],
+            file_path=output_file,
+            split_sentences=True,
         )
 
         print("Audio file saved")
@@ -95,7 +96,7 @@ class LLMAgent:
 
         # Maintain context
         self.chat_history = [
-            {"role": "system", "content": str(SYSTEM_PROMPT)},
+            # {"role": "system", "content": str(SYSTEM_PROMPT)},
             {"role": "user", "content": "you are about to enter the discord call"}
         ]
 
@@ -110,11 +111,10 @@ class LLMAgent:
             self.chat_history.append({"role": "user", "content": text})
 
             data = {
-                "model": "IAra",
+                "model": "IAra_8b",
                 "messages": self.chat_history,
                 "max_tokens": 200,
-                "n": 1,
-                "temperature": 0.8,
+                "temperature": 0.75,
                 "stream": False
             }
 
@@ -167,7 +167,7 @@ class DiscordBot(commands.Cog):
         audio.export(wav_buffer, format="wav")
         wav_buffer.seek(0)
 
-        segments, _ = self.model.transcribe(wav_buffer, language='en') # pt or en
+        segments, _ = self.model.transcribe(wav_buffer, language='pt') # pt or en
         transcript = ''.join([seg.text for seg in segments])
         return transcript.strip()
 
@@ -247,7 +247,7 @@ class DiscordBot(commands.Cog):
         self.ctx = ctx  # Store the context
 
         def callback(user, data: voice_recv.VoiceData):
-            if not self.llm.is_processing:
+            if not self.llm.is_processing :
                 print('voice_data received, user ' + str(user))
                 if user not in self.pcm_buffers:
                     self.pcm_buffers[user] = []
@@ -279,7 +279,7 @@ async def setup_hook():
 synth = SpeechSynthesizer()
 
 llm = LLMAgent()
-llm.ask(str(SYSTEM_PROMPT) + "you are about to enter the discord call")
-llm.is_processing=False
+# llm.ask(str(SYSTEM_PROMPT) + "you are about to enter the discord call")
+# llm.is_processing=False
 
 bot.run(os.getenv('DISCORD_TOKEN'))

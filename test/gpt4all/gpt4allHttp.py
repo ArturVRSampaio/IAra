@@ -9,15 +9,14 @@ headers = {
 }
 
 # Sua mensagem
-text = "tell me a history about a big castle"
+text = "how long can a history be?"
 
 # Dados para enviar na requisição POST
 data = {
-    "model": "IAra",
+    "model": "IAra_8b",
     "messages": [{"role": "user", "content": text}],
     "max_tokens": 200,
-    "n": 1,
-    "temperature": 0.8,
+    "temperature": 0.75,
     "stream": False
 }
 
