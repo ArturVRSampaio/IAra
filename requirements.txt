@@ -1,0 +1,7 @@
+transformers==4.51.3
+torch==2.6
+torchaudio==2.6
+numpy==2.2.2
+coqui-tts
+sounddevice~=0.5.2
+soundfile~=0.13.1

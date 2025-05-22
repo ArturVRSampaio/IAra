@@ -67,7 +67,7 @@ SYSTEM_PROMPT = {
 
 class SpeechSynthesizer:
     def __init__(self):
-        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=True).to('cuda')
+        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False).to('cuda')
 
     def generateTtsFile(self, text: str):
         if not text:
@@ -78,7 +78,7 @@ class SpeechSynthesizer:
         self.tts.tts_to_file(
             text=text,
             language="pt-br", #pt-br or en
-            speaker=self.tts.speakers[2],
+            speaker=self.tts.speakers[0],
             file_path=output_file,
             split_sentences=True,
         )
