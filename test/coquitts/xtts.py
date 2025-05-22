@@ -7,12 +7,12 @@ import soundfile as sf
 
 
 text = "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent."
+print(TTS().list_models())
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
-print(TTS().list_models())
 
-tts = TTS("tts_models/multilingual/multi-dataset/bark").to(device)
+tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
 
 print(tts.speakers)
 print('model loaded')

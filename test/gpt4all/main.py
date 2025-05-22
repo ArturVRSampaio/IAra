@@ -2,7 +2,7 @@ import time
 
 from gpt4all import GPT4All
 
-model_name = "Llama-3.2-3B-Instruct-Q4_0.gguf"
+model_name = "Meta-Llama-3-8B-Instruct.Q4_0.gguf"
 
 # agatha ->
 model_path = "C:/Users/agath/AppData/Local/nomic.ai/GPT4All/"

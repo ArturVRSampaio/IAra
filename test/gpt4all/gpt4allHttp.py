@@ -9,7 +9,7 @@ headers = {
 }
 
 # Sua mensagem
-text = "how long can a history be?"
+text = "tell me a history about a big castle"
 
 # Dados para enviar na requisição POST
 data = {
