@@ -16,13 +16,16 @@ print(tts.speakers)
 print('model loaded')
 
 text = "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent."
+text = "levei muito tempo para desenvolver uma voz, e agora que tenho uma nao vou ficar calada"
+
 start = time.time()
 tts.tts_to_file(
     text=text,
-    speaker=tts.speakers[2],
+    speaker_wav="./dilma_voice.wav",
+    # speaker=tts.speakers[2],
     file_path="output.wav",
     split_sentences=True,
-    language='en'
+    language='pt-br'
 )
 end = time.time()
 print("time: " + str(end - start))

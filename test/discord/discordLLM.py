@@ -94,10 +94,7 @@ class LLMAgent:
         self.lock = threading.Lock()
         self.last_response_time = datetime.now()
 
-        # Maintain context
         self.chat_history = [
-            # {"role": "system", "content": str(SYSTEM_PROMPT)},
-            {"role": "user", "content": "you are about to enter the discord call"}
         ]
 
     def ask(self, text: str) -> str:
@@ -144,6 +141,8 @@ class DiscordBot(commands.Cog):
         self.processing_task = None  # Single task for processing audio
         self.loop = None
         self.model = WhisperModel("turbo",
+                                  cpu_threads = 2,
+                                  num_workers = 5,
                                   device='cuda')
         self.ctx = None  # Store context for sending messages
         self.voice_client = None  # Store voice client for playback
@@ -215,30 +214,42 @@ class DiscordBot(commands.Cog):
                     not self.llm.is_processing):
                 self.llm.is_processing = True
 
-                transcript=""
-                for user in list(self.pcm_buffers.keys()):
+                transcript = ""
+
+                # Create a list of transcription tasks for all users
+                async def transcribe_for_user(user):
                     user_transcript = self.transcribe_audio(user)
                     if user_transcript:
-                        transcript += str(user) + " says: " + user_transcript + "\n"
-                        print(f"[TRANSCRIÇÃO] {user}:\n{transcript}\n")
-                    if self.ctx:
-                        await self.ctx.send(f"**{user}**: {transcript}")
+                        return f"{user} says: {user_transcript}\n"
+                    return ""
+
+                # Run transcription tasks in parallel
+                tasks = [transcribe_for_user(user) for user in list(self.pcm_buffers.keys())]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Combine results into transcript
+                for result in results:
+                    if isinstance(result, str) and result:
+                        transcript += result
+                        print(f"[TRANSCRIÇÃO] {result}")
+                        if self.ctx:
+                            await self.ctx.send(f"**{result.strip()}**")
 
                 self.pcm_buffers.clear()
 
                 if self.ctx and transcript:
-                    asyncio.create_task(self.ctx.send(f"===============================================\n "
-                                                      f"**full transcript**: \n"
-                                                      f"{transcript}\n"
-                                                      f"==============================================="))
+                    await self.ctx.send(f"===============================================\n "
+                                        f"**full transcript**: \n"
+                                        f"{transcript}\n"
+                                        f"===============================================")
                     llm_response = self.llm.ask(transcript)
                     if llm_response:
-                        asyncio.create_task(self.ctx.send(f"===============================================\n"
-                                                          f"**IAra**: {llm_response}\n"
-                                                          f"==============================================="))
+                        await self.ctx.send(f"===============================================\n"
+                                            f"**IAra**: {llm_response}\n"
+                                            f"===============================================")
                         self.synth.generateTtsFile(llm_response)
                         await self.playAudio()
-                self.llm.is_processing=False
+                self.llm.is_processing = False
 
             await asyncio.sleep(0.1)  # Sleep briefly to avoid busy-waiting
 
