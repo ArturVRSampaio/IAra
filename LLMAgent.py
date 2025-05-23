@@ -6,14 +6,13 @@ from gpt4all import GPT4All
 
 class LLMAgent:
     def __init__(self):
-        self.url = "http://localhost:4891/v1/chat/completions"
         self.headers = {'Content-Type': 'application/json'}
         self.is_processing = False
         self.lock = threading.Lock()
         self.last_response_time = datetime.now()
 
         model_name = "Meta-Llama-3-8B-Instruct.Q4_0.gguf"
-        model_path = "C:/Users/agath/AppData/Local/nomic.ai/GPT4All/"
+        model_path = "/home/agatha/.local/share/nomic.ai/GPT4All/"
 
         self.gpt4all = GPT4All(
             model_name,

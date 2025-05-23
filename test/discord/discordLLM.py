@@ -20,7 +20,7 @@ load_dotenv()
 
 class SpeechSynthesizer:
     def __init__(self):
-        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False).to('cuda')
+        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False).to('cpu')
 
     def generateTtsFile(self, text: str):
         if not text:
@@ -78,8 +78,7 @@ class DiscordBot(commands.Cog):
 
         segments, _ = self.model.transcribe(wav_buffer,
                                             language='pt', # pt or en
-                                            vad_filter=True,
-                                            hotwords="IAra")
+                                            vad_filter=False)
         transcript = ''.join([seg.text for seg in segments])
         return transcript.strip()
 

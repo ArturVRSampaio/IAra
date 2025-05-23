@@ -72,6 +72,8 @@ class Testing(commands.Cog):
     async def test(self, ctx: Context):
         self.ctx = ctx  # Store the context
         def callback(user, data: voice_recv.VoiceData):
+
+            return
             if user not in self.audio_buffers:
                 self.audio_buffers[user] = asyncio.Queue()
                 self.processing_tasks[user] = self.loop.create_task(
@@ -97,10 +99,9 @@ class Testing(commands.Cog):
 
         # Ensure FFmpeg is available
         try:
-            # Path to test.wav (adjust if necessary)
-            audio_file = "test.wav"
+            audio_file = "lastVoice.wav"
             if not os.path.exists(audio_file):
-                await ctx.send("Arquivo test.wav não encontrado!")
+                await ctx.send("Arquivo lastVoice.wav não encontrado!")
                 return
 
             # Create audio source
