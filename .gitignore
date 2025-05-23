@@ -1,4 +1,4 @@
 .env
-test/vtube/token.txt
+experiments/vtube/token.txt
 lastVoice.wav
 .idea
