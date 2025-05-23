@@ -19,9 +19,13 @@ text = "tell me a history about a big castle"
 start = time.time()
 
 response = gpt4all.generate(text,
-                            max_tokens=200,
-                            n_batch=16,
+                            max_tokens=250,
+                            n_batch=256,
                             temp=0.8,
+                            top_p=0.4,
+                            top_k=40,
+                            repeat_penalty=1.18,
+                            repeat_last_n=64,
                             streaming=False)
 
 end = time.time()

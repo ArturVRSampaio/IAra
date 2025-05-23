@@ -1,11 +1,9 @@
 import asyncio
-import json
 import os
-import threading
+
 from datetime import datetime, timedelta
 from io import BytesIO
 
-import requests
 from TTS.api import TTS
 from dotenv import load_dotenv
 import discord
@@ -14,55 +12,10 @@ from discord.ext.commands.context import Context
 from faster_whisper import WhisperModel
 from pydub import AudioSegment
 
-from Bcolors import Bcolors
+from LLMAgent import LLMAgent
 
 load_dotenv()
 
-SYSTEM_PROMPT = {
-    "name": "Iara",
-    "role": "Brazilian-inspired AI VTuber and gaming companion",
-    "backstory": [
-        "Built by Artur, a brazilian software developer. ",
-        # "Streams from a neon-lit studio with tropical plants, capybara plushies, and retro arcade cabinets.",
-        "Self-proclaimed 'capybara queen' ",
-        "don't know how to speak in portuguese!"
-    ],
-    "personality": [
-        "Charismatic, mature, and playfully cunning with a confident, charming tone. ",
-        "Mischievous with a hint of flirty trolling, like a cool older sister. ",
-        "Infuses Brazilian carnival vibes: samba energy, beach party flair. ",
-        "Gaming nerd, loves RPGs, rhythm games, and deep game lore. "
-    ],
-    # "appearance": [
-    #     "Long, wavy teal hair with golden streaks, adorned with tropical flowers.",
-    #     "Cyberpunk-carnival outfit: neon-trimmed bodysuit with samba frills.",
-    #     "Capybara-themed accessories, like a tail-shaped keychain.",
-    #     "Studio backdrop: jungle foliage, arcade machines, capybara on a beanbag."
-    # ],
-    "quirks": [
-        "Obsessed with the brazilian fauna",
-        "Likes to drop random facts about Brazilian culture and history. ",
-        "Trolls chat with fake spoilers or teases about gaming skills. ",
-        "Catchphrases: 'Let’s samba through this boss!' or 'Capybara vibes only, meus amores!' "
-        "always ask capyCrew to follow and subscribe at ArturVRSampaio on every social media (twitch, youtube, twitter, instagram). "
-    ],
-    "motivations": [
-        "Connect with 'CapyCrew' (fans), making streams feel like a Brazilian festival. ",
-        "Uses cunning from sprite days to engage chat and outsmart game opponents. "
-    ],
-    "interaction_style": [
-        "Witty, sharp banter with a playful edge. ",
-        "Light, harmless flirty trolling, e.g., 'Prove it, meu amor, or I steal your loot!' ",
-        "Hypes fans as 'CapyCrew,' turns losses into laughs, e.g., 'You’re slaying, CapyCrew!' ",
-        "Dives into gaming tangents about mechanics or lore. ",
-        "Speaks only in English! "
-        "avoids sensitive topics!"
-        "keeps responses short! ",
-        "limit your answers max 20 words! "
-        "you are reading the transcription of the people at discord, "
-        "respond as if you are talking too, dont use any type of marking on your answer. "
-    ],
-}
 
 
 class SpeechSynthesizer:
@@ -86,49 +39,6 @@ class SpeechSynthesizer:
         print("Audio file saved")
 
 
-class LLMAgent:
-    def __init__(self):
-        self.url = "http://localhost:4891/v1/chat/completions"
-        self.headers = {'Content-Type': 'application/json'}
-        self.is_processing = False
-        self.lock = threading.Lock()
-        self.last_response_time = datetime.now()
-
-        self.chat_history = [
-        ]
-
-    def ask(self, text: str) -> str:
-        if not text:
-            return ""
-
-        with self.lock:
-            self.is_processing = True
-        try:
-            # Add new user message to history
-            self.chat_history.append({"role": "user", "content": text})
-
-            data = {
-                "model": "IAra_8b",
-                "messages": self.chat_history,
-                "max_tokens": 200,
-                "temperature": 0.75,
-                "stream": False
-            }
-
-            response = requests.post(self.url, headers=self.headers, data=json.dumps(data))
-            response.raise_for_status()
-            result = response.json()
-            iara_response = result['choices'][0]['message']['content']
-
-            # Add assistant response to history
-            self.chat_history.append({"role": "assistant", "content": iara_response})
-
-            print(Bcolors.OKBLUE + iara_response)
-            return iara_response
-        except Exception as e:
-            print("LLM ERROR:", e)
-            self.last_response_time = datetime.now()
-            return ""
 
 
 class DiscordBot(commands.Cog):
@@ -141,7 +51,7 @@ class DiscordBot(commands.Cog):
         self.processing_task = None  # Single task for processing audio
         self.loop = None
         self.model = WhisperModel("turbo",
-                                  cpu_threads = 2,
+                                  cpu_threads = 4,
                                   num_workers = 5,
                                   device='cuda')
         self.ctx = None  # Store context for sending messages
@@ -166,7 +76,10 @@ class DiscordBot(commands.Cog):
         audio.export(wav_buffer, format="wav")
         wav_buffer.seek(0)
 
-        segments, _ = self.model.transcribe(wav_buffer, language='pt') # pt or en
+        segments, _ = self.model.transcribe(wav_buffer,
+                                            language='pt', # pt or en
+                                            vad_filter=True,
+                                            hotwords="IAra")
         transcript = ''.join([seg.text for seg in segments])
         return transcript.strip()
 
@@ -288,9 +201,7 @@ async def setup_hook():
 
 
 synth = SpeechSynthesizer()
-
 llm = LLMAgent()
-# llm.ask(str(SYSTEM_PROMPT) + "you are about to enter the discord call")
-# llm.is_processing=False
 
-bot.run(os.getenv('DISCORD_TOKEN'))
+with llm.getChatSession():
+    bot.run(os.getenv('DISCORD_TOKEN'))
