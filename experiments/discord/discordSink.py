@@ -72,8 +72,6 @@ class Testing(commands.Cog):
     async def test(self, ctx: Context):
         self.ctx = ctx  # Store the context
         def callback(user, data: voice_recv.VoiceData):
-
-            return
             if user not in self.audio_buffers:
                 self.audio_buffers[user] = asyncio.Queue()
                 self.processing_tasks[user] = self.loop.create_task(
