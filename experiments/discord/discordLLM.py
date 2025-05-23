@@ -20,7 +20,7 @@ load_dotenv()
 
 class SpeechSynthesizer:
     def __init__(self):
-        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False).to('cpu')
+        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False).to('cuda')
 
     def generateTtsFile(self, text: str):
         if not text:
@@ -53,7 +53,7 @@ class DiscordBot(commands.Cog):
         self.model = WhisperModel("turbo",
                                   cpu_threads = 4,
                                   num_workers = 5,
-                                  device='cuda')
+                                  device='auto')
         self.ctx = None  # Store context for sending messages
         self.voice_client = None  # Store voice client for playback
 
