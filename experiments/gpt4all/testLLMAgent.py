@@ -12,7 +12,7 @@ def ask_and_prin_in_real_time(user_input):
 
     print(response)
     # for token in response:
-    #     print(token, end="", flush=True)
+    #     print(token, end="\", flush=True)
     # print()
 
 
