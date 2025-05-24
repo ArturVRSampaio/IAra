@@ -79,7 +79,7 @@ class DiscordBot(commands.Cog):
         segments, _ = self.model.transcribe(wav_buffer,
                                             language='pt', # pt or en
                                             vad_filter=True,
-                                            hotwords="IAra")
+                                            hotwords="IAra, Vtuber")
         transcript = ''.join([seg.text for seg in segments])
         return transcript.strip()
 

@@ -1,4 +1,3 @@
-import json
 import threading
 
 from datetime import datetime
@@ -52,6 +51,7 @@ class LLMAgent:
         Não use formatação de texto, aspas ou emojis.
         Não responda no estilo "IAra says:".
         Evite repetir informações desnecessárias e foque na interação direta com cada usuário.
+        Não use numeros, escreva-os por extenso
 
         """
 
@@ -62,6 +62,10 @@ class LLMAgent:
     def ask(self, messages):
         with self.lock:
             self.is_processing = True
+
+        while len(self.gpt4all._history) > 5:
+            self.gpt4all._history.pop(0)
+
         try:
             response = self.gpt4all.generate(
                 prompt=messages,
