@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime, timedelta
 from io import BytesIO
 import re
+from time import sleep
 
 from TTS.api import TTS
 from dotenv import load_dotenv
@@ -44,6 +45,8 @@ class SpeechSynthesizer:
 
 class DiscordBot(commands.Cog):
     def __init__(self, bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
+        self.canReleaseIsProcessing = True
+        self.audio_task = None
         self.llm = llm
         self.synth = speech_synth
         self.bot = bot
@@ -51,7 +54,7 @@ class DiscordBot(commands.Cog):
         self.last_audio_time = None  # Timestamp of last audio packet from any user
         self.processing_task = None  # Single task for processing audio
         self.loop = None
-        self.ctx = None  # Store context for sending messages
+        self.context = None  # Store context for sending messages
         self.voice_client = None  # Store voice client for playback
         self.audioQueue=[]
         self.model = WhisperModel("turbo",
@@ -87,17 +90,17 @@ class DiscordBot(commands.Cog):
 
     async def playAudio(self, audio_file_name: str):
         if not self.voice_client or not self.voice_client.is_connected():
-            self.voice_client = await self.ctx.author.voice.channel.connect()
+            self.voice_client = await self.context.author.voice.channel.connect()
 
         try:
             if not os.path.exists(audio_file_name):
-                await self.ctx.send("Arquivo de audio não encontrado!")
-                return
+                await self.context.send(f"Arquivo de áudio não encontrado: {audio_file_name}")
+                return False  # Return False to indicate failure
 
             # Create audio source
             audio_source = discord.FFmpegPCMAudio(
                 audio_file_name,
-                executable="ffmpeg"  # Ensure FFmpeg is in PATH or specify full path
+                executable="ffmpeg"
             )
 
             # Create an event to signal when playback is complete
@@ -111,13 +114,16 @@ class DiscordBot(commands.Cog):
             # Play the audio
             if not self.voice_client.is_playing():
                 self.voice_client.play(audio_source, after=after_playback)
-                await self.ctx.send("Tocando no canal de voz!")
+                await self.context.send(f"Tocando áudio: {audio_file_name} no canal de voz")
                 await playback_done.wait()  # Wait until playback is complete
+                return True  # Playback successful
             else:
-                await self.ctx.send("O bot já está tocando um áudio. Aguarde até terminar!")
+                await self.context.send("O bot já está tocando um áudio. Adicionando à fila.")
+                return False  # Playback not started (already playing)
         except Exception as e:
-            await self.ctx.send(f"Erro ao tocar o áudio: {str(e)}")
-            print(f"Erro ao tocar lastVoice.wav: {e}")
+            await self.context.send(f"Erro ao tocar o áudio {audio_file_name}: {str(e)}")
+            print(f"Erro ao tocar {audio_file_name}: {e}")
+            return False  # Playback failed
 
     async def process_audio(self):
         while self.last_audio_time is not None:  # Continue until stopped
@@ -127,6 +133,7 @@ class DiscordBot(commands.Cog):
                     current_time - self.last_audio_time >= timedelta(seconds=1) and
                     not self.llm.is_processing):
                 self.llm.is_processing = True
+                self.canReleaseIsProcessing = False
 
                 transcript = ""
 
@@ -146,21 +153,23 @@ class DiscordBot(commands.Cog):
                     if isinstance(result, str) and result:
                         transcript += result
                         print(f"[TRANSCRIÇÃO] {result}")
-                        if self.ctx:
-                            await self.ctx.send(f"**{result.strip()}**")
+                        if self.context:
+                            await self.context.send(f"**{result.strip()}**")
 
                 self.pcm_buffers.clear()
 
-                if self.ctx and transcript:
-                    await self.ctx.send(f"===============================================\n "
-                                        f"**full transcript**: \n"
-                                        f"{transcript}\n"
-                                        f"===============================================")
+                if self.context and transcript:
+                    await self.context.send(f"===============================================\n "
+                                            f"**full transcript**: \n"
+                                            f"{transcript}\n"
+                                            f"===============================================")
+                    full_response = ""
                     llm_response_stream = self.llm.ask(transcript)
 
                     buffer = ""
                     sentence_end = re.compile(r"[.!?…]")  # pontuação que finaliza a frase
                     for token in llm_response_stream:
+                        full_response += token
                         print(token, end="", flush=True)
                         buffer += token
 
@@ -168,45 +177,83 @@ class DiscordBot(commands.Cog):
                         if sentence_end.search(buffer) and len(buffer.strip().split()) >= 3:
                             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
                                 self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
-                                buffer = ""
                                 self.audioQueue.append(tmp_audio_file.name)
+                            buffer = ""
+                    # Processa o resto da string
                     if buffer.strip():
                         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
                             self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
                             self.audioQueue.append(tmp_audio_file.name)
+                            print(f"Adicionado à fila (buffer final): {tmp_audio_file.name}")
 
-                    await self.playAudioQueue()
+                    print(full_response)
+                    await self.context.send(f"===============================================\n "
+                                            f"**full Response**: \n"
+                                            f"**IAra says:** {full_response}\n"
+                                            f"===============================================")
 
-                self.llm.is_processing = False
-
+                    self.canReleaseIsProcessing=True
+                    print(f"canReleaseIsProcessing definido como True, audioQueue: {self.audioQueue}")
             await asyncio.sleep(0.1)  # Sleep briefly to avoid busy-waiting
 
+    async def processVoice(self, data, user):
+        print('voice_data received, user ' + str(user))
+        if user not in self.pcm_buffers:
+            self.pcm_buffers[user] = []
+        self.pcm_buffers[user].append(data.pcm)
+        self.last_audio_time = datetime.now()
+        # Start processing task if not already running
+        if self.processing_task is None or self.processing_task.done():
+            self.processing_task = self.loop.create_task(self.process_audio())
+
     @commands.command()
-    async def test(self, ctx: Context):
-        self.ctx = ctx  # Store the context
-
+    async def test(self, context: Context):
         def callback(user, data: voice_recv.VoiceData):
-            if not self.llm.is_processing :
-                print('voice_data received, user ' + str(user))
-                if user not in self.pcm_buffers:
-                    self.pcm_buffers[user] = []
-                self.pcm_buffers[user].append(data.pcm)
-                self.last_audio_time = datetime.now()
-                # Start processing task if not already running
-                if self.processing_task is None or self.processing_task.done():
-                    self.processing_task = self.loop.create_task(self.process_audio())
+            if not self.llm.is_processing:
+                self.loop.create_task(self.processVoice(data, user))
 
-        self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+        self.context = context  # Store the context
+
+        self.voice_client = await self.context.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
         self.voice_client.listen(voice_recv.BasicSink(callback))
-        await ctx.send("Bot conectado ao canal de voz!")
+        await self.context.send("Bot conectado ao canal de voz!")
+
+    async def playAudioQueue(self):
+        while self.audioQueue:  # Process all files in the queue
+            audio_file = self.audioQueue[0]  # Get the first file
+            success = await self.playAudio(audio_file)
+            if success:
+                try:
+                    os.remove(audio_file)  # Remove file only if playback was successful
+                    print(f"Arquivo removido: {audio_file}")
+                except Exception as e:
+                    print(f"Erro ao remover arquivo {audio_file}: {e}")
+                self.audioQueue.pop(0)  # Remove the file from the queue
+            else:
+                # If playback failed, break to avoid infinite loop
+                break
+        return len(self.audioQueue) == 0  # Return True if queue is empty
+
+    async def play_audio_loop(self):
+        while True:
+            if self.audioQueue:
+                print(f"Processando audioQueue: {self.audioQueue}")
+                await self.playAudioQueue()
+                print(f"audioQueue após processamento: {self.audioQueue}")
+                if not self.audioQueue and self.canReleaseIsProcessing:
+                    print(f"Definindo is_processing = False (canReleaseIsProcessing: {self.canReleaseIsProcessing})")
+                    self.llm.is_processing = False
+            else:
+                if self.canReleaseIsProcessing:
+                    print(
+                        f"audioQueue vazio, definindo is_processing = False (canReleaseIsProcessing: {self.canReleaseIsProcessing})")
+                    self.llm.is_processing = False
+                await asyncio.sleep(0.1)
 
     async def cog_load(self):
         self.loop = asyncio.get_running_loop()
-
-    async def playAudioQueue(self):
-        for audio in self.audioQueue:
-            await self.playAudio(audio)
-            os.remove(audio)
+        self.audioQueue = []
+        self.audio_task = self.loop.create_task(self.play_audio_loop())
 
 
 bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
