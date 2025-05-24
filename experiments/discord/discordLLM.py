@@ -1,8 +1,10 @@
 import asyncio
 import os
+import tempfile
 
 from datetime import datetime, timedelta
 from io import BytesIO
+import re
 
 from TTS.api import TTS
 from dotenv import load_dotenv
@@ -22,16 +24,15 @@ class SpeechSynthesizer:
     def __init__(self):
         self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False).to('cuda')
 
-    def generateTtsFile(self, text: str):
+    def generateTtsFile(self, text: str, audio_file_name):
         if not text:
             return
-        output_file = "lastVoice.wav"
 
         # Generate the TTS audio
         self.tts.tts_to_file(
             text=text,
             speaker=self.tts.speakers[2],
-            file_path=output_file,
+            file_path=audio_file_name,
             split_sentences=True,
             language='pt-br'
         )
@@ -52,6 +53,7 @@ class DiscordBot(commands.Cog):
         self.loop = None
         self.ctx = None  # Store context for sending messages
         self.voice_client = None  # Store voice client for playback
+        self.audioQueue=[]
         self.model = WhisperModel("turbo",
                                   cpu_threads = 4,
                                   num_workers = 5,
@@ -83,19 +85,18 @@ class DiscordBot(commands.Cog):
         transcript = ''.join([seg.text for seg in segments])
         return transcript.strip()
 
-    async def playAudio(self):
+    async def playAudio(self, audio_file_name: str):
         if not self.voice_client or not self.voice_client.is_connected():
             self.voice_client = await self.ctx.author.voice.channel.connect()
 
         try:
-            audio_file = "lastVoice.wav"
-            if not os.path.exists(audio_file):
-                await self.ctx.send("Arquivo lastVoice.wav não encontrado!")
+            if not os.path.exists(audio_file_name):
+                await self.ctx.send("Arquivo de audio não encontrado!")
                 return
 
             # Create audio source
             audio_source = discord.FFmpegPCMAudio(
-                audio_file,
+                audio_file_name,
                 executable="ffmpeg"  # Ensure FFmpeg is in PATH or specify full path
             )
 
@@ -155,13 +156,27 @@ class DiscordBot(commands.Cog):
                                         f"**full transcript**: \n"
                                         f"{transcript}\n"
                                         f"===============================================")
-                    llm_response = self.llm.ask(transcript)
-                    if llm_response:
-                        await self.ctx.send(f"===============================================\n"
-                                            f"**IAra**: {llm_response}\n"
-                                            f"===============================================")
-                        self.synth.generateTtsFile(llm_response)
-                        await self.playAudio()
+                    llm_response_stream = self.llm.ask(transcript)
+
+                    buffer = ""
+                    sentence_end = re.compile(r"[.!?…]")  # pontuação que finaliza a frase
+                    for token in llm_response_stream:
+                        print(token, end="", flush=True)
+                        buffer += token
+
+                        # Processa quando detecta final de frase
+                        if sentence_end.search(buffer) and len(buffer.strip().split()) >= 3:
+                            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
+                                self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
+                                buffer = ""
+                                self.audioQueue.append(tmp_audio_file.name)
+                    if buffer.strip():
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
+                            self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
+                            self.audioQueue.append(tmp_audio_file.name)
+
+                    await self.playAudioQueue()
+
                 self.llm.is_processing = False
 
             await asyncio.sleep(0.1)  # Sleep briefly to avoid busy-waiting
@@ -187,6 +202,11 @@ class DiscordBot(commands.Cog):
 
     async def cog_load(self):
         self.loop = asyncio.get_running_loop()
+
+    async def playAudioQueue(self):
+        for audio in self.audioQueue:
+            await self.playAudio(audio)
+            os.remove(audio)
 
 
 bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())

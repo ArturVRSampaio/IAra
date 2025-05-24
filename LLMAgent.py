@@ -76,10 +76,9 @@ class LLMAgent:
                 top_k=40,
                 repeat_penalty=1.15,
                 repeat_last_n=64,
-                streaming=False
+                streaming=True
             )
             self.last_response_time = datetime.now()
-            print(response)
             return response
 
         except Exception as e:
