@@ -4,11 +4,16 @@ from LLMAgent import LLMAgent
 
 
 def ask_and_prin_in_real_time(user_input):
+    loop_start = time.time()
     response  = agent.ask(user_input)  # retorna um gerador streaming
+    loop_end = time.time()
 
-    for token in response:
-        print(token, end="", flush=True)
-    print()
+    print("time: " + str(loop_end - loop_start))
+
+    print(response)
+    # for token in response:
+    #     print(token, end="", flush=True)
+    # print()
 
 
 agent = LLMAgent()

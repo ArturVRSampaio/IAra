@@ -9,17 +9,18 @@ from LLMAgent import LLMAgent
 
 # Inicializa Coqui TTS
 device = "cuda" if torch.cuda.is_available() else "cpu"
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=True).to(device)
+tts = TTS("tts_models/multilingual/multi-dataset/your_tts", progress_bar=True).to(device)
 speaker_wav_path = "../TTS/coquitts/agatha_voice.wav"
 
 def speak(text):
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
-        tts.tts_to_file(text=text,
-                        file_path=tmp_audio_file.name,
-                        speaker_wav=speaker_wav_path,
-                        language="pt",
-                        split_sentences=False,
-                        )
+        tts.tts_to_file(
+            text=text,
+            speaker=tts.speakers[2],
+            file_path="output.wav",
+            split_sentences=True,
+            language='pt-br'
+        )
         audio_data, sample_rate = sf.read(tmp_audio_file.name)
         sd.play(audio_data, sample_rate)
         sd.wait()

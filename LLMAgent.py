@@ -1,6 +1,6 @@
 import json
 import threading
-import time
+
 from datetime import datetime
 from gpt4all import GPT4All
 
@@ -12,7 +12,10 @@ class LLMAgent:
         self.last_response_time = datetime.now()
 
         model_name = "Meta-Llama-3-8B-Instruct.Q4_0.gguf"
-        model_path = "/home/agatha/.local/share/nomic.ai/GPT4All/"
+        # model_name = "Llama-3.2-3B-Instruct-Q4_0.gguf"
+
+        # model_path = "/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
+        model_path = "C:/Users/agatha/AppData/Local/nomic.ai/GPT4All/"
 
         self.gpt4all = GPT4All(
             model_name,

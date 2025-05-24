@@ -52,10 +52,6 @@ print(f"Sample rate: {samplerate}, Data shape: {data.shape}")
 sd.play(data, samplerate)
 sd.wait()
 
-
-
-
-
 start = time.time()
 
 tts.tts_to_file(text=text,

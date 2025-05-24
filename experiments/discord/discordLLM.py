@@ -30,10 +30,10 @@ class SpeechSynthesizer:
         # Generate the TTS audio
         self.tts.tts_to_file(
             text=text,
-            language="pt-br", #pt-br or en
-            speaker=self.tts.speakers[0],
+            speaker=self.tts.speakers[2],
             file_path=output_file,
             split_sentences=True,
+            language='pt-br'
         )
 
         print("Audio file saved")
@@ -50,12 +50,12 @@ class DiscordBot(commands.Cog):
         self.last_audio_time = None  # Timestamp of last audio packet from any user
         self.processing_task = None  # Single task for processing audio
         self.loop = None
+        self.ctx = None  # Store context for sending messages
+        self.voice_client = None  # Store voice client for playback
         self.model = WhisperModel("turbo",
                                   cpu_threads = 4,
                                   num_workers = 5,
                                   device='auto')
-        self.ctx = None  # Store context for sending messages
-        self.voice_client = None  # Store voice client for playback
 
     def transcribe_audio(self, user) -> str:
         print("transcribe audio")
@@ -78,7 +78,8 @@ class DiscordBot(commands.Cog):
 
         segments, _ = self.model.transcribe(wav_buffer,
                                             language='pt', # pt or en
-                                            vad_filter=False)
+                                            vad_filter=True,
+                                            hotwords="IAra")
         transcript = ''.join([seg.text for seg in segments])
         return transcript.strip()
 
