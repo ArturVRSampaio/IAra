@@ -39,8 +39,6 @@ class SpeechSynthesizer:
         print("Audio file saved")
 
 
-
-
 class DiscordBot(commands.Cog):
     def __init__(self, bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
         self.canReleaseIsProcessing = True
@@ -153,7 +151,6 @@ class DiscordBot(commands.Cog):
                             self.loop.create_task(self.context.send(f"**{result.strip()}**"))
                     else:
                         self.canReleaseIsProcessing = True
-                        print(f"canReleaseIsProcessing definido como True, audioQueue: {self.audioQueue}")
                 self.pcm_buffers.clear()
 
                 if self.context and transcript:
@@ -192,7 +189,6 @@ class DiscordBot(commands.Cog):
                                 f"**IAra says:** {full_response}\n"
                                 f"==============================================="))
         self.canReleaseIsProcessing = True
-        print(f"canReleaseIsProcessing definido como True, audioQueue: {self.audioQueue}")
 
     async def processVoice(self, data, user):
         print('voice_data received, user ' + str(user))
@@ -239,8 +235,6 @@ class DiscordBot(commands.Cog):
                 await self.playAudioQueue()
             else:
                 if self.canReleaseIsProcessing:
-                    print(
-                        f"audioQueue vazio, definindo is_processing = False (canReleaseIsProcessing: {self.canReleaseIsProcessing})")
                     self.llm.is_processing = False
             await asyncio.sleep(0.1)
 
