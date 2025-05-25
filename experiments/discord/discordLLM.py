@@ -5,7 +5,6 @@ import tempfile
 from datetime import datetime, timedelta
 from io import BytesIO
 import re
-from time import sleep
 
 from TTS.api import TTS
 from dotenv import load_dotenv
@@ -23,21 +22,20 @@ load_dotenv()
 
 class SpeechSynthesizer:
     def __init__(self):
-        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False).to('cuda')
+        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False).to('cuda')
 
-    def generateTtsFile(self, text: str, audio_file_name):
+    async def generateTtsFile(self, text: str, audio_file_name):
         if not text:
             return
-
-        # Generate the TTS audio
-        self.tts.tts_to_file(
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, lambda: self.tts.tts_to_file(
             text=text,
-            speaker=self.tts.speakers[2],
+            speaker_wav='../TTS/coquitts/agatha_voice.wav',
+            # speaker=self.tts.speakers[0],
             file_path=audio_file_name,
-            split_sentences=True,
-            language='pt-br'
-        )
-
+            split_sentences=False,
+            language='pt'
+        ))
         print("Audio file saved")
 
 
@@ -94,7 +92,7 @@ class DiscordBot(commands.Cog):
 
         try:
             if not os.path.exists(audio_file_name):
-                await self.context.send(f"Arquivo de áudio não encontrado: {audio_file_name}")
+                self.loop.create_task(self.context.send(f"Arquivo de áudio não encontrado: {audio_file_name}"))
                 return False  # Return False to indicate failure
 
             # Create audio source
@@ -114,14 +112,12 @@ class DiscordBot(commands.Cog):
             # Play the audio
             if not self.voice_client.is_playing():
                 self.voice_client.play(audio_source, after=after_playback)
-                await self.context.send(f"Tocando áudio: {audio_file_name} no canal de voz")
                 await playback_done.wait()  # Wait until playback is complete
                 return True  # Playback successful
             else:
-                await self.context.send("O bot já está tocando um áudio. Adicionando à fila.")
+                self.loop.create_task(self.context.send("O bot já está tocando um áudio. Adicionando à fila."))
                 return False  # Playback not started (already playing)
         except Exception as e:
-            await self.context.send(f"Erro ao tocar o áudio {audio_file_name}: {str(e)}")
             print(f"Erro ao tocar {audio_file_name}: {e}")
             return False  # Playback failed
 
@@ -154,47 +150,49 @@ class DiscordBot(commands.Cog):
                         transcript += result
                         print(f"[TRANSCRIÇÃO] {result}")
                         if self.context:
-                            await self.context.send(f"**{result.strip()}**")
-
+                            self.loop.create_task(self.context.send(f"**{result.strip()}**"))
+                    else:
+                        self.canReleaseIsProcessing = True
+                        print(f"canReleaseIsProcessing definido como True, audioQueue: {self.audioQueue}")
                 self.pcm_buffers.clear()
 
                 if self.context and transcript:
-                    await self.context.send(f"===============================================\n "
-                                            f"**full transcript**: \n"
-                                            f"{transcript}\n"
-                                            f"===============================================")
-                    full_response = ""
-                    llm_response_stream = self.llm.ask(transcript)
-
-                    buffer = ""
-                    sentence_end = re.compile(r"[.!?…]")  # pontuação que finaliza a frase
-                    for token in llm_response_stream:
-                        full_response += token
-                        print(token, end="", flush=True)
-                        buffer += token
-
-                        # Processa quando detecta final de frase
-                        if sentence_end.search(buffer) and len(buffer.strip().split()) >= 3:
-                            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
-                                self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
-                                self.audioQueue.append(tmp_audio_file.name)
-                            buffer = ""
-                    # Processa o resto da string
-                    if buffer.strip():
-                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
-                            self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
-                            self.audioQueue.append(tmp_audio_file.name)
-                            print(f"Adicionado à fila (buffer final): {tmp_audio_file.name}")
-
-                    print(full_response)
-                    await self.context.send(f"===============================================\n "
-                                            f"**full Response**: \n"
-                                            f"**IAra says:** {full_response}\n"
-                                            f"===============================================")
-
-                    self.canReleaseIsProcessing=True
-                    print(f"canReleaseIsProcessing definido como True, audioQueue: {self.audioQueue}")
+                    self.loop.create_task(self.askLLMAndProcessIt(transcript))
             await asyncio.sleep(0.1)  # Sleep briefly to avoid busy-waiting
+
+    async def askLLMAndProcessIt(self, transcript):
+        self.loop.create_task(self.context.send(f"===============================================\n "
+                                f"**full transcript**: \n"
+                                f"{transcript}\n"
+                                f"==============================================="))
+        full_response = ""
+        llm_response_stream = self.llm.ask(transcript)
+        buffer = ""
+        sentence_end = re.compile(r"[.!?,…]")  # pontuação que finaliza a frase
+        for token in llm_response_stream:
+            full_response += token
+            print(token, end="", flush=True)
+            buffer += token
+
+            # Processa quando detecta final de frase
+            if sentence_end.search(buffer) and len(buffer.strip().split()) >= 3:
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
+                    await self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
+                    self.audioQueue.append(tmp_audio_file.name)
+                buffer = ""
+        # Processa o resto da string
+        if buffer.strip():
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
+                await self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
+                self.audioQueue.append(tmp_audio_file.name)
+                print(f"Adicionado à fila (buffer final): {tmp_audio_file.name}")
+        print(full_response)
+        self.loop.create_task(self.context.send(f"===============================================\n "
+                                f"**full Response**: \n"
+                                f"**IAra says:** {full_response}\n"
+                                f"==============================================="))
+        self.canReleaseIsProcessing = True
+        print(f"canReleaseIsProcessing definido como True, audioQueue: {self.audioQueue}")
 
     async def processVoice(self, data, user):
         print('voice_data received, user ' + str(user))
@@ -216,7 +214,7 @@ class DiscordBot(commands.Cog):
 
         self.voice_client = await self.context.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
         self.voice_client.listen(voice_recv.BasicSink(callback))
-        await self.context.send("Bot conectado ao canal de voz!")
+        self.loop.create_task(self.context.send("Bot conectado ao canal de voz!"))
 
     async def playAudioQueue(self):
         while self.audioQueue:  # Process all files in the queue
@@ -228,27 +226,23 @@ class DiscordBot(commands.Cog):
                     print(f"Arquivo removido: {audio_file}")
                 except Exception as e:
                     print(f"Erro ao remover arquivo {audio_file}: {e}")
-                self.audioQueue.pop(0)  # Remove the file from the queue
+                self.audioQueue.pop(0)  # Remove the file from the queueaudioQueue
             else:
                 # If playback failed, break to avoid infinite loop
+                print("playback failed, break to avoid infinite loop")
                 break
         return len(self.audioQueue) == 0  # Return True if queue is empty
 
     async def play_audio_loop(self):
         while True:
             if self.audioQueue:
-                print(f"Processando audioQueue: {self.audioQueue}")
                 await self.playAudioQueue()
-                print(f"audioQueue após processamento: {self.audioQueue}")
-                if not self.audioQueue and self.canReleaseIsProcessing:
-                    print(f"Definindo is_processing = False (canReleaseIsProcessing: {self.canReleaseIsProcessing})")
-                    self.llm.is_processing = False
             else:
                 if self.canReleaseIsProcessing:
                     print(
                         f"audioQueue vazio, definindo is_processing = False (canReleaseIsProcessing: {self.canReleaseIsProcessing})")
                     self.llm.is_processing = False
-                await asyncio.sleep(0.1)
+            await asyncio.sleep(0.1)
 
     async def cog_load(self):
         self.loop = asyncio.get_running_loop()
