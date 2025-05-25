@@ -1,261 +1,286 @@
 import asyncio
 import os
+import re
 import tempfile
-
 from datetime import datetime, timedelta
 from io import BytesIO
-import re
 
-from TTS.api import TTS
-from dotenv import load_dotenv
 import discord
 from discord.ext import commands, voice_recv
-from discord.ext.commands.context import Context
+from dotenv import load_dotenv
 from faster_whisper import WhisperModel
 from pydub import AudioSegment
+from TTS.api import TTS
 
 from LLMAgent import LLMAgent
 
+# Load environment variables from .env file
 load_dotenv()
 
 
-
 class SpeechSynthesizer:
-    def __init__(self):
-        self.tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False).to('cuda')
+    """Handles text-to-speech conversion using the TTS model."""
 
-    async def generateTtsFile(self, text: str, audio_file_name):
+    def __init__(self):
+        self.tts = TTS(
+            model_name="tts_models/multilingual/multi-dataset/xtts_v2",
+            progress_bar=False,
+        ).to("cuda")
+
+    async def generate_tts_file(self, text: str, output_path: str) -> None:
+        """Generates a TTS audio file from the provided text."""
         if not text:
             return
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: self.tts.tts_to_file(
-            text=text,
-            speaker_wav='../TTS/coquitts/agatha_voice.wav',
-            # speaker=self.tts.speakers[0],
-            file_path=audio_file_name,
-            split_sentences=False,
-            language='pt'
-        ))
+        await loop.run_in_executor(
+            None,
+            lambda: self.tts.tts_to_file(
+                text=text,
+                speaker_wav="../TTS/coquitts/agatha_voice.wav",
+                file_path=output_path,
+                split_sentences=False,
+                language="pt",
+            ),
+        )
 
 
 class DiscordBot(commands.Cog):
-    def __init__(self, bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
-        self.canReleaseIsProcessing = True
-        self.audio_task = None
-        self.llm = llm
-        self.synth = speech_synth
-        self.bot = bot
-        self.pcm_buffers = {}  # user_id -> list of PCM bytes
-        self.last_audio_time = None  # Timestamp of last audio packet from any user
-        self.processing_task = None  # Single task for processing audio
-        self.loop = None
-        self.context = None  # Store context for sending messages
-        self.voice_client = None  # Store voice client for playback
-        self.audioQueue=[]
-        self.model = WhisperModel("turbo",
-                                  cpu_threads = 4,
-                                  num_workers = 5,
-                                  device='auto')
+    """A Discord bot cog for handling voice interactions and TTS responses."""
 
-    def transcribe_audio(self, user) -> str:
-        print("transcribe audio")
+    def __init__(self, bot: commands.Bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
+        """Initializes the bot with dependencies."""
+        self.bot = bot
+        self.llm = llm
+        self.speech_synth = speech_synth
+        self.audio_queue = []
+        self.pcm_buffers = {}  # Maps user_id to list of PCM audio chunks
+        self.last_audio_time = None  # Timestamp of the last audio packet
+        self.processing_task = None  # Task for processing audio
+        self.loop = None
+        self.context = None  # Stores Discord context for sending messages
+        self.voice_client = None  # Stores the voice client for playback
+        self.can_release_processing = True
+        self.model = WhisperModel(
+            "turbo",
+            cpu_threads=4,
+            num_workers=5,
+            device="auto",
+        )
+
+    def transcribe_audio(self, user: discord.User) -> str:
+        """Transcribes audio chunks for a user into text."""
         pcm_chunks = self.pcm_buffers.get(user, [])
         if not pcm_chunks:
             return ""
 
-        raw_pcm = b''.join(pcm_chunks)
-
+        # Combine PCM chunks and convert to mono WAV
+        raw_pcm = b"".join(pcm_chunks)
         audio = AudioSegment(
             data=raw_pcm,
             sample_width=2,
             frame_rate=48000,
-            channels=2
-        ).set_channels(1)  # Whisper works better with mono
+            channels=2,
+        ).set_channels(1)  # Convert to mono for Whisper
 
         wav_buffer = BytesIO()
         audio.export(wav_buffer, format="wav")
         wav_buffer.seek(0)
 
-        segments, _ = self.model.transcribe(wav_buffer,
-                                            language='pt', # pt or en
-                                            vad_filter=True,
-                                            hotwords="IAra, Vtuber")
-        transcript = ''.join([seg.text for seg in segments])
-        return transcript.strip()
+        # Transcribe audio using Whisper model
+        segments, _ = self.model.transcribe(
+            wav_buffer,
+            language="pt",
+            vad_filter=True,
+            hotwords=["IAra", "Vtuber"],
+        )
+        return "".join(seg.text for seg in segments).strip()
 
-    async def playAudio(self, audio_file_name: str):
+    async def play_audio(self, audio_file: str) -> bool:
+        """Plays an audio file in the voice channel."""
         if not self.voice_client or not self.voice_client.is_connected():
             self.voice_client = await self.context.author.voice.channel.connect()
 
+        if not os.path.exists(audio_file):
+            await self.context.send(f"Audio file not found: {audio_file}")
+            return False
+
         try:
-            if not os.path.exists(audio_file_name):
-                self.loop.create_task(self.context.send(f"Arquivo de áudio não encontrado: {audio_file_name}"))
-                return False  # Return False to indicate failure
-
-            # Create audio source
-            audio_source = discord.FFmpegPCMAudio(
-                audio_file_name,
-                executable="ffmpeg"
-            )
-
-            # Create an event to signal when playback is complete
+            audio_source = discord.FFmpegPCMAudio(audio_file, executable="ffmpeg")
             playback_done = asyncio.Event()
 
             def after_playback(error):
                 if error:
-                    print(f"Erro durante a reprodução: {error}")
+                    print(f"Playback error: {error}")
                 self.loop.call_soon_threadsafe(playback_done.set)
 
-            # Play the audio
             if not self.voice_client.is_playing():
                 self.voice_client.play(audio_source, after=after_playback)
-                await playback_done.wait()  # Wait until playback is complete
-                return True  # Playback successful
+                await playback_done.wait()
+                return True
             else:
-                self.loop.create_task(self.context.send("O bot já está tocando um áudio. Adicionando à fila."))
-                return False  # Playback not started (already playing)
+                await self.context.send("Bot is already playing audio. Adding to queue.")
+                return False
         except Exception as e:
-            print(f"Erro ao tocar {audio_file_name}: {e}")
-            return False  # Playback failed
+            print(f"Error playing {audio_file}: {e}")
+            return False
 
-    async def process_audio(self):
-        while self.last_audio_time is not None:  # Continue until stopped
+    async def process_audio(self) -> None:
+        """Processes buffered audio and triggers LLM responses."""
+        while self.last_audio_time is not None:
             current_time = datetime.now()
-            if (self.last_audio_time is not None and
-                    self.pcm_buffers and
-                    current_time - self.last_audio_time >= timedelta(seconds=1) and
-                    not self.llm.is_processing):
+            if (
+                self.last_audio_time
+                and self.pcm_buffers
+                and current_time - self.last_audio_time >= timedelta(seconds=1)
+                and not self.llm.is_processing
+            ):
                 self.llm.is_processing = True
-                self.canReleaseIsProcessing = False
+                self.can_release_processing = False
 
-                transcript = ""
-
-                # Create a list of transcription tasks for all users
+                # Transcribe audio for all users in parallel
                 async def transcribe_for_user(user):
-                    user_transcript = self.transcribe_audio(user)
-                    if user_transcript:
-                        return f"{user} says: {user_transcript}\n"
-                    return ""
+                    transcript = self.transcribe_audio(user)
+                    return f"{user} says: {transcript}\n" if transcript else ""
 
-                # Run transcription tasks in parallel
-                tasks = [transcribe_for_user(user) for user in list(self.pcm_buffers.keys())]
+                tasks = [transcribe_for_user(user) for user in self.pcm_buffers]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Combine results into transcript
+                transcript = ""
                 for result in results:
                     if isinstance(result, str) and result:
                         transcript += result
-                        print(f"[TRANSCRIÇÃO] {result}")
-                        if self.context:
-                            self.loop.create_task(self.context.send(f"**{result.strip()}**"))
+                        print(f"[TRANSCRIPT] {result}")
+                        await self.context.send(f"**{result.strip()}**")
                     else:
-                        self.canReleaseIsProcessing = True
+                        self.can_release_processing = True
+
                 self.pcm_buffers.clear()
 
-                if self.context and transcript:
-                    self.loop.create_task(self.askLLMAndProcessIt(transcript))
-            await asyncio.sleep(0.1)  # Sleep briefly to avoid busy-waiting
+                if transcript:
+                    await self.ask_llm_and_process(transcript)
 
-    async def askLLMAndProcessIt(self, transcript):
-        self.loop.create_task(self.context.send(f"===============================================\n "
-                                f"**full transcript**: \n"
-                                f"{transcript}\n"
-                                f"==============================================="))
+            await asyncio.sleep(0.1)  # Avoid busy-waiting
+
+    async def ask_llm_and_process(self, transcript: str) -> None:
+        """Sends transcript to LLM and processes the response into audio."""
+        await self.context.send(
+            f"===============================================\n"
+            f"**Full Transcript**:\n{transcript}\n"
+            f"==============================================="
+        )
+
         full_response = ""
-        llm_response_stream = self.llm.ask(transcript)
         buffer = ""
-        sentence_end = re.compile(r"[.!?,…]")  # pontuação que finaliza a frase
-        for token in llm_response_stream:
+        sentence_end = re.compile(r"[.!?,…]")  # Sentence-ending punctuation
+
+        for token in self.llm.ask(transcript):
             full_response += token
             print(token, end="", flush=True)
             buffer += token
 
-            # Processa quando detecta final de frase
-            if sentence_end.search(buffer) and len(buffer.strip().split()) >= 3 and buffer.strip()[-1] in " .!?,…":
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
-                    await self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
-                    self.audioQueue.append(tmp_audio_file.name)
+            # Process complete sentences
+            if (
+                sentence_end.search(buffer)
+                and len(buffer.strip().split()) >= 3
+                and buffer.strip()[-1] in ".!?,…"
+            ):
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                    await self.speech_synth.generate_tts_file(buffer.strip(), tmp_file.name)
+                    self.audio_queue.append(tmp_file.name)
                 buffer = ""
-        # Processa o resto da string
-        if buffer.strip():
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
-                await self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
-                self.audioQueue.append(tmp_audio_file.name)
-                print(f"Adicionado à fila (buffer final): {tmp_audio_file.name}")
-        print(full_response)
-        self.loop.create_task(self.context.send(f"===============================================\n "
-                                f"**full Response**: \n"
-                                f"**IAra says:** {full_response}\n"
-                                f"==============================================="))
-        self.canReleaseIsProcessing = True
 
-    async def processVoice(self, data, user):
-        print('voice_data received, user ' + str(user))
+        # Process remaining text
+        if buffer.strip():
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                await self.speech_synth.generate_tts_file(buffer.strip(), tmp_file.name)
+                self.audio_queue.append(tmp_file.name)
+                print(f"Added to queue (final buffer): {tmp_file.name}")
+
+        print(full_response)
+        await self.context.send(
+            f"===============================================\n"
+            f"**Full Response**:\n**IAra says:** {full_response}\n"
+            f"==============================================="
+        )
+        self.can_release_processing = True
+
+    async def process_voice(self, data: voice_recv.VoiceData, user: discord.User) -> None:
+        """Handles incoming voice data from a user."""
+        print(f"Voice data received from user: {user}")
         if user not in self.pcm_buffers:
             self.pcm_buffers[user] = []
         self.pcm_buffers[user].append(data.pcm)
         self.last_audio_time = datetime.now()
-        # Start processing task if not already running
+
         if self.processing_task is None or self.processing_task.done():
             self.processing_task = self.loop.create_task(self.process_audio())
 
     @commands.command()
-    async def test(self, context: Context):
+    async def test(self, ctx: commands.Context) -> None:
+        """Connects the bot to the user's voice channel for testing."""
         def callback(user, data: voice_recv.VoiceData):
             if not self.llm.is_processing:
-                self.loop.create_task(self.processVoice(data, user))
+                self.loop.create_task(self.process_voice(data, user))
 
-        self.context = context  # Store the context
-
-        self.voice_client = await self.context.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+        self.context = ctx
+        self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
         self.voice_client.listen(voice_recv.BasicSink(callback))
-        self.loop.create_task(self.context.send("Bot conectado ao canal de voz!"))
+        await ctx.send("Bot connected to voice channel!")
 
-    async def playAudioQueue(self):
-        while self.audioQueue:  # Process all files in the queue
-            audio_file = self.audioQueue[0]  # Get the first file
-            success = await self.playAudio(audio_file)
+    async def play_audio_queue(self) -> bool:
+        """Plays all audio files in the queue."""
+        while self.audio_queue:
+            audio_file = self.audio_queue[0]
+            success = await self.play_audio(audio_file)
             if success:
                 try:
-                    os.remove(audio_file)  # Remove file only if playback was successful
-                    print(f"Arquivo removido: {audio_file}")
+                    os.remove(audio_file)
+                    print(f"Removed file: {audio_file}")
                 except Exception as e:
-                    print(f"Erro ao remover arquivo {audio_file}: {e}")
-                self.audioQueue.pop(0)  # Remove the file from the queueaudioQueue
+                    print(f"Error removing file {audio_file}: {e}")
+                self.audio_queue.pop(0)
             else:
-                # If playback failed, break to avoid infinite loop
-                print("playback failed, break to avoid infinite loop")
+                print("Playback failed, stopping to avoid infinite loop")
                 break
-        return len(self.audioQueue) == 0  # Return True if queue is empty
+        return len(self.audio_queue) == 0
 
-    async def play_audio_loop(self):
+    async def play_audio_loop(self) -> None:
+        """Continuously checks and plays audio from the queue."""
         while True:
-            if self.audioQueue:
-                await self.playAudioQueue()
+            if self.audio_queue:
+                await self.play_audio_queue()
             else:
-                if self.canReleaseIsProcessing:
+                if self.can_release_processing:
                     self.llm.is_processing = False
             await asyncio.sleep(0.1)
 
-    async def cog_load(self):
+    async def cog_load(self) -> None:
+        """Initializes the cog with the event loop and audio queue."""
         self.loop = asyncio.get_running_loop()
-        self.audioQueue = []
+        self.audio_queue = []
         self.audio_task = self.loop.create_task(self.play_audio_loop())
 
 
-bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
-@bot.event
-async def on_ready():
-    print(f'Logged in as {bot.user} ({bot.user.id})')
+# Initialize bot and dependencies
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
 
 @bot.event
-async def setup_hook():
+async def on_ready() -> None:
+    """Logs when the bot is ready."""
+    print(f"Logged in as {bot.user} ({bot.user.id})")
+
+
+@bot.event
+async def setup_hook() -> None:
+    """Sets up the bot by adding the DiscordBot cog."""
     await bot.add_cog(DiscordBot(bot, llm, synth))
 
 
-
+# Instantiate dependencies
 synth = SpeechSynthesizer()
 llm = LLMAgent()
 
+# Run the bot
 with llm.getChatSession():
-    bot.run(os.getenv('DISCORD_TOKEN'))
+    bot.run(os.getenv("DISCORD_TOKEN"))
