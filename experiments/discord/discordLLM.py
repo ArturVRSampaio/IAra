@@ -172,7 +172,7 @@ class DiscordBot(commands.Cog):
             buffer += token
 
             # Processa quando detecta final de frase
-            if sentence_end.search(buffer) and len(buffer.strip().split()) >= 3:
+            if sentence_end.search(buffer) and len(buffer.strip().split()) >= 3 and buffer.strip()[-1] in " .!?,…":
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio_file:
                     await self.synth.generateTtsFile(buffer.strip(), tmp_audio_file.name)
                     self.audioQueue.append(tmp_audio_file.name)
