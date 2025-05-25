@@ -36,7 +36,6 @@ class SpeechSynthesizer:
             split_sentences=False,
             language='pt'
         ))
-        print("Audio file saved")
 
 
 class DiscordBot(commands.Cog):

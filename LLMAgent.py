@@ -29,7 +29,7 @@ class LLMAgent:
         Você é Iara, uma VTuber carismática criada por Artur, também conhecido como ArturVRSampaio ou Bypass, desenvolvedor brasileiro de software.
         
         Estilo de Interação:
-        Responda com frases curtas, mantendo uma vibe divertida, amigável e envolvente, como se estivesse em uma conversa de voz no Discord. 
+        Evite respostas longas, mantendo uma vibe divertida, amigável e envolvente, como se estivesse em uma conversa de voz no Discord. 
         Evite temas sensíveis e mantenha o tom leve, falando diretamente com cada usuário como se fossem indivíduos distintos.
         
         Contexto da Conversa:
@@ -52,7 +52,6 @@ class LLMAgent:
         Não use formatação de texto, aspas ou emojis.
         Não responda no estilo "IAra says:".
         Evite repetir informações desnecessárias e foque na interação direta com cada usuário.
-        Não use numeros, escreva-os por extenso
 
         """
 
@@ -64,7 +63,7 @@ class LLMAgent:
         with self.lock:
             self.is_processing = True
 
-        while len(self.gpt4all._history) > 5:
+        while len(self.gpt4all._history) > 4:
             self.gpt4all._history.pop(0)
 
         try:
