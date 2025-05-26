@@ -4,23 +4,27 @@ import re
 import tempfile
 from datetime import datetime, timedelta
 from io import BytesIO
-
+import webrtcvad
+import numpy as np
+import librosa
 import discord
 from discord.ext import commands, voice_recv
 from dotenv import load_dotenv
 from faster_whisper import WhisperModel
 from pydub import AudioSegment
 from TTS.api import TTS
-
 from LLMAgent import LLMAgent
 
 # Load environment variables from .env file
 load_dotenv()
 
+# Audio settings for VAD
+FRAME_DURATION_MS = 30  # Frame duration for VAD (ms)
+RATE = 16000  # Target sample rate for VAD
+CHUNK = int(RATE * FRAME_DURATION_MS / 1000)  # Samples per frame (480 for 30ms at 16kHz)
 
 class SpeechSynthesizer:
     """Handles text-to-speech conversion using the TTS model."""
-
     def __init__(self):
         self.tts = TTS(
             model_name="tts_models/multilingual/multi-dataset/xtts_v2",
@@ -43,10 +47,8 @@ class SpeechSynthesizer:
             ),
         )
 
-
 class DiscordBot(commands.Cog):
     """A Discord bot cog for handling voice interactions and TTS responses."""
-
     def __init__(self, bot: commands.Bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
         """Initializes the bot with dependencies."""
         self.bot = bot
@@ -54,7 +56,7 @@ class DiscordBot(commands.Cog):
         self.speech_synth = speech_synth
         self.audio_queue = []
         self.pcm_buffers = {}  # Maps user_id to list of PCM audio chunks
-        self.last_audio_time = None  # Timestamp of the last audio packet
+        self.last_audio_time = None  # Timestamp of last audio packet
         self.processing_task = None  # Task for processing audio
         self.loop = None
         self.context = None  # Stores Discord context for sending messages
@@ -66,6 +68,8 @@ class DiscordBot(commands.Cog):
             num_workers=5,
             device="auto",
         )
+        self.vad = webrtcvad.Vad()  # Initialize VAD
+        self.vad.set_mode(3)  # Most aggressive VAD setting
 
     def transcribe_audio(self, user: discord.User) -> str:
         """Transcribes audio chunks for a user into text."""
@@ -209,8 +213,44 @@ class DiscordBot(commands.Cog):
         print(f"Voice data received from user: {user}")
         if user not in self.pcm_buffers:
             self.pcm_buffers[user] = []
-        self.pcm_buffers[user].append(data.pcm)
-        self.last_audio_time = datetime.now()
+
+        # Convert PCM data to numpy array
+        pcm_data = np.frombuffer(data.pcm, dtype=np.int16)
+        if len(pcm_data) % 2 != 0:
+            pcm_data = pcm_data[:-1]  # Ensure even number of samples for stereo
+
+        # Convert stereo to mono for VAD
+        pcm_data = pcm_data.reshape(-1, 2).mean(axis=1).astype(np.int16)
+
+        # Resample from 48kHz to 16kHz for VAD
+        audio_float = pcm_data.astype(np.float32) / 32768.0
+        audio_resampled = librosa.resample(audio_float, orig_sr=48000, target_sr=RATE)
+        pcm_resampled = (audio_resampled * 32768).astype(np.int16)
+
+        # Process with VAD
+        for i in range(0, len(pcm_resampled), CHUNK):
+            chunk = pcm_resampled[i:i + CHUNK]
+            if len(chunk) == CHUNK:
+                try:
+                    if self.vad.is_speech(chunk.tobytes(), RATE):
+                        # Convert back to 48kHz stereo for compatibility with transcribe_audio
+                        chunk_float = chunk.astype(np.float32) / 32768.0
+                        chunk_48khz = librosa.resample(chunk_float, orig_sr=RATE, target_sr=48000)
+                        chunk_stereo = np.repeat(chunk_48khz[:, np.newaxis], 2, axis=1).ravel()
+                        chunk_bytes = (chunk_stereo * 32768).astype(np.int16).tobytes()
+                        self.pcm_buffers[user].append(chunk_bytes)
+                        self.last_audio_time = datetime.now()
+                except webrtcvad.Error as e:
+                    print(f"VAD error: {e}")
+                    continue
+
+        # Limit buffer to 2 seconds of audio (at 48kHz, stereo)
+        max_bytes = int(48000 * 2 * 2 * 2)  # 2 seconds, 48kHz, 2 channels, 2 bytes per sample
+        for user in self.pcm_buffers:
+            total_bytes = sum(len(chunk) for chunk in self.pcm_buffers[user])
+            while total_bytes > max_bytes:
+                removed_chunk = self.pcm_buffers[user].pop(0)
+                total_bytes -= len(removed_chunk)
 
         if self.processing_task is None or self.processing_task.done():
             self.processing_task = self.loop.create_task(self.process_audio())
@@ -260,26 +300,22 @@ class DiscordBot(commands.Cog):
         self.audio_queue = []
         self.audio_task = self.loop.create_task(self.play_audio_loop())
 
-
 # Initialize bot and dependencies
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
+# Instantiate dependencies
+synth = SpeechSynthesizer()
+llm = LLMAgent()
 
 @bot.event
 async def on_ready() -> None:
     """Logs when the bot is ready."""
     print(f"Logged in as {bot.user} ({bot.user.id})")
 
-
 @bot.event
 async def setup_hook() -> None:
     """Sets up the bot by adding the DiscordBot cog."""
     await bot.add_cog(DiscordBot(bot, llm, synth))
-
-
-# Instantiate dependencies
-synth = SpeechSynthesizer()
-llm = LLMAgent()
 
 # Run the bot
 with llm.getChatSession():
