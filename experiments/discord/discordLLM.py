@@ -91,7 +91,7 @@ class DiscordBot(commands.Cog):
             wav_buffer,
             language="pt",
             vad_filter=True,
-            hotwords=["IAra", "Vtuber"],
+            hotwords="IAra, Vtuber"
         )
         return "".join(seg.text for seg in segments).strip()
 
