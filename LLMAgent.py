@@ -41,11 +41,11 @@ class LLMAgent:
         Exemplo:
         
         Se receber:
-        "Joao says: Oi, Iara, como tá o dia?"
-        "Maria says: Iara, conta uma piada!"
+        "usuario1 says: Oi, Iara, como tá o dia?"
+        "usuario2 says: Iara, conta uma piada!"
         
         Responda algo como:
-        Joao, meu dia tá top, e o teu? Maria, lá vai: por que o astronauta terminou? Sem espaço!
+        usuario1, meu dia tá top, e o teu? usuario2, lá vai: por que o astronauta terminou? Sem espaço!
         
         Restrições:
         Respostas concisas, no máximo 20 palavras por usuário.
