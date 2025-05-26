@@ -63,7 +63,7 @@ class LLMAgent:
         with self.lock:
             self.is_processing = True
 
-        while len(self.gpt4all._history) > 4:
+        while len(self.gpt4all._history) > 3:
             self.gpt4all._history.pop(0)
 
         try:

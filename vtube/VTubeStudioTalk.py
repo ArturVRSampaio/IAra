@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 import numpy as np
 import pyvts
@@ -22,7 +23,7 @@ class VTubeStudioTalk:
     async def connect(self):
         """Initialize and authenticate VTube Studio connection."""
         await self.vts.connect()
-        await self.vts.request_authenticate_token()
+        await self.vts.request_authenticate_token(True)
         is_auth = await self.vts.request_authenticate()
         print(Bcolors.OKGREEN + "VTube Studio connected : " + str(is_auth))
 
@@ -52,7 +53,9 @@ class VTubeStudioTalk:
                 weight=1.0
             )
 
-            await self.vts.request(request_msg)
+            response = await self.vts.request(request_msg)
+
+            print("response " + str(response))
 
             elapsed_time = time.time() - start_time
             expected_time = (intensities.index(intensity) + 1) * 0.05

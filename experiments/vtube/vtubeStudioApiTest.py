@@ -6,10 +6,10 @@ from pydub.playback import play
 import time
 import threading
 
-# IF THIS STUPID CONNECTION WONT WORK, TRY TO FORCE THE TOKEN GENERATOR!!
+# IF THIS STUPID CONNECTION DONT WORK, TRY TO FORCE THE TOKEN GENERATOR!!
 
 plugin_info = {
-    "plugin_name": "Iara VTuber",
+    "plugin_name": "Iara VTuber Test",
     "developer": "Artur",
     "authentication_token_path": "./token.txt"
 }
@@ -46,7 +46,7 @@ async def main():
     await vts.request_authenticate()
 
     # Carregar o arquivo de áudio
-    audio_file = "lastVoice.wav"
+    audio_file = "agatha_long_voice.wav"
     samples, sample_rate, audio = load_audio(audio_file)
 
     # Calcular intensidades
@@ -54,8 +54,8 @@ async def main():
     intensities = get_audio_intensity(samples, sample_rate, block_duration)
 
     # Iniciar reprodução do áudio em uma thread separada
-    audio_thread = threading.Thread(target=play_audio, args=(audio,))
-    audio_thread.start()
+    # audio_thread = threading.Thread(target=play_audio, args=(audio,))
+    # audio_thread.start()
 
     # Sincronizar com VTube Studio
     start_time = time.time()
@@ -79,7 +79,7 @@ async def main():
         await asyncio.sleep(sleep_time)
 
     # Aguardar a thread de áudio terminar
-    audio_thread.join()
+    # audio_thread.join()
 
     # Fechar conexão
     await vts.close()
