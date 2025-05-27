@@ -4,6 +4,8 @@ import time
 import numpy as np
 import pyvts
 import torch
+from websockets import connect
+
 from Bcolors import Bcolors
 
 # VTube Studio plugin info
@@ -23,7 +25,7 @@ class VTubeStudioTalk:
     async def connect(self):
         """Initialize and authenticate VTube Studio connection."""
         await self.vts.connect()
-        await self.vts.request_authenticate_token(True)
+        await self.vts.request_authenticate_token()
         is_auth = await self.vts.request_authenticate()
         print(Bcolors.OKGREEN + "VTube Studio connected : " + str(is_auth))
 
@@ -41,6 +43,7 @@ class VTubeStudioTalk:
 
     async def sync_mouth(self, waveform: torch.Tensor, sample_rate: int):
         """Sync VTube Studio mouth animation with audio."""
+        await self.connect()
 
         intensities = self.get_audio_intensity(waveform, sample_rate, block_duration=0.05)
         start_time = time.time()

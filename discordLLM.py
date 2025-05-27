@@ -116,9 +116,7 @@ class DiscordBot(commands.Cog):
                     print(f"Playback error: {error}")
                 self.loop.call_soon_threadsafe(playback_done.set)
 
-            print("if voice is playing")
             if not self.voice_client.is_playing():
-                print("time to play audio")
                 waveform, sample_rate = torchaudio.load(audio_file)
                 self.vts_talk.run_sync_mouth(waveform, sample_rate)
                 self.voice_client.play(audio_source, after=after_playback)
