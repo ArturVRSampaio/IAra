@@ -155,8 +155,9 @@ class DiscordBot(commands.Cog):
                         transcript += result
                         print(f"[TRANSCRIPT] {result}")
                         await self.context.send(f"**{result.strip()}**")
-                    else:
-                        self.can_release_processing = True
+
+                if not transcript:
+                    self.can_release_processing = True
 
                 self.pcm_buffers.clear()
 
@@ -259,7 +260,6 @@ class DiscordBot(commands.Cog):
                 await self.play_audio_queue()
             elif (self.synthesis_task_queue.empty()
                     and self.can_release_processing):
-                    print("is_processing released")
                     self.llm.is_processing = False
             await asyncio.sleep(0.1)
 
