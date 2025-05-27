@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 import discord
+import torch
 import torchaudio
 from discord.ext import commands, voice_recv
 from dotenv import load_dotenv
@@ -19,15 +20,16 @@ from vtube.VTubeStudioTalk import VTubeStudioTalk
 # Load environment variables from .env file
 load_dotenv()
 
+torch.set_num_threads(14)
 
 class SpeechSynthesizer:
     """Handles text-to-speech conversion using the TTS model."""
 
     def __init__(self):
         self.tts = TTS(
-            model_name="tts_models/multilingual/multi-dataset/xtts_v2",
+            model_name="tts_models/multilingual/multi-dataset/your_tts",
             progress_bar=False,
-        ).to("cuda")
+        ).to("cpu")
 
     async def generate_tts_file(self, text: str, output_path: str) -> None:
         """Generates a TTS audio file from the provided text."""
@@ -38,11 +40,10 @@ class SpeechSynthesizer:
             None,
             lambda: self.tts.tts_to_file(
                 text=text,
-                speaker_wav="./experiments/TTS/coquitts/agatha_voice.wav",
+                speaker=self.tts.speakers[2],
                 file_path=output_path,
-                split_sentences=False,
-                language="pt",
-            ),
+                language='pt-br'
+            )
         )
 
 

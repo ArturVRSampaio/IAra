@@ -2,7 +2,9 @@ import webrtcvad
 import numpy as np
 from faster_whisper import WhisperModel
 import librosa
+import torch
 
+torch.set_num_threads(16)
 # Configurações
 FRAME_DURATION_MS = 30  # Frame duration in milliseconds (10, 20, or 30ms supported by webrtcvad)
 RATE = 16000  # Target sample rate (16kHz)

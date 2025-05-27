@@ -1,18 +1,18 @@
 import torch
 from faster_whisper import WhisperModel
 from pathlib import Path
+torch.set_num_threads(16)
 
 def transcribe_audio(audio_path):
     # Verifica se o arquivo de áudio existe
     if not Path(audio_path).exists():
         raise FileNotFoundError(f"Arquivo de áudio não encontrado: {audio_path}")
 
-    # Carrega o modelo Whisper (large-v3, o maior disponível)
     model = WhisperModel(
-        model_size_or_path="large-v3",
+        model_size_or_path="turbo",
         device="cpu",
         compute_type="int8_float32",  # Otimização para desempenho
-        cpu_threads=6  # Número de threads para CPU
+        cpu_threads=16  # Número de threads para CPU
     )
 
     # Realiza a transcrição
@@ -38,7 +38,7 @@ def save_transcription(text, output_path):
 
 if __name__ == "__main__":
     # Caminho do arquivo de áudio
-    audio_file = "audio.ogg"
+    audio_file = "agatha_long_voice.wav"
     output_file = "transcricao.txt"
 
     try:

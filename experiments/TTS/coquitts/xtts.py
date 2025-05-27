@@ -21,6 +21,8 @@ Também neste edição o festival terá um espetáculo de teatro musical especia
 text = "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent."
 text = "levei muito tempo para desenvolver uma voz, e agora que tenho uma não vou ficar calada"
 print(TTS().list_models())
+torch.set_num_threads(8)
+
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
