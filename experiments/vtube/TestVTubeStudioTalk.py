@@ -2,7 +2,7 @@ import asyncio
 
 import torchaudio
 
-from vtube.VTubeStudioTalk import VTubeStudioTalk
+from VTubeStudioTalk import VTubeStudioTalk
 
 
 loop = asyncio.new_event_loop()

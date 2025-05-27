@@ -4,9 +4,10 @@ import sounddevice as sd
 from TTS.api import TTS
 import soundfile as sf
 
-torch.set_num_threads(16)
+torch.set_num_threads(8)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+device='cpu'
 print(device)
 print(TTS().list_models())
 
