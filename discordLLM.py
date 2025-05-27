@@ -47,10 +47,9 @@ class SpeechSynthesizer:
 
 
 class DiscordBot(commands.Cog):
-    """A Discord bot cog for handling voice interactions and TTS responses."""
-
     def __init__(self, bot: commands.Bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
         """Initializes the bot with dependencies."""
+        self.can_release_processing = True
         self.vts_talk = None
         self.bot = bot
         self.llm = llm
@@ -62,7 +61,7 @@ class DiscordBot(commands.Cog):
         self.loop = None
         self.context = None  # Stores Discord context for sending messages
         self.voice_client = None  # Stores the voice client for playback
-        self.can_release_processing = True
+        self.synthesis_task_queue = asyncio.Queue()  # Queue for audio synthesis tasks
         self.model = WhisperModel(
             "turbo",
             cpu_threads=4,
@@ -128,6 +127,7 @@ class DiscordBot(commands.Cog):
         except Exception as e:
             print(f"Error playing {audio_file}: {e}")
             return False
+
     async def process_audio(self) -> None:
         """Processes buffered audio and triggers LLM responses."""
         while self.last_audio_time is not None:
@@ -253,10 +253,13 @@ class DiscordBot(commands.Cog):
         while True:
             if len(self.audio_queue) >= 2:
                 await self.play_audio_queue()
-            elif self.audio_queue and self.can_release_processing:
+            elif (self.audio_queue
+                  and self.synthesis_task_queue.empty()
+                  and self.can_release_processing):
                 await self.play_audio_queue()
-            else:
-                if self.can_release_processing:
+            elif (self.synthesis_task_queue.empty()
+                    and self.can_release_processing):
+                    print("is_processing released")
                     self.llm.is_processing = False
             await asyncio.sleep(0.1)
 
