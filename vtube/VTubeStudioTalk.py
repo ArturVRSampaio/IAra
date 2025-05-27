@@ -56,9 +56,7 @@ class VTubeStudioTalk:
                 weight=1.0
             )
 
-            response = await self.vts.request(request_msg)
-
-            print("response " + str(response))
+            await self.vts.request(request_msg)
 
             elapsed_time = time.time() - start_time
             expected_time = (intensities.index(intensity) + 1) * 0.05
