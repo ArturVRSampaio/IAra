@@ -12,40 +12,14 @@ from discord.ext import commands, voice_recv
 from dotenv import load_dotenv
 from faster_whisper import WhisperModel
 from pydub import AudioSegment
-from TTS.api import TTS
 
 from LLMAgent import LLMAgent
+from SpeechSynthesizer import SpeechSynthesizer
 from VTubeStudioTalk import VTubeStudioTalk
 
-# Load environment variables from .env file
 load_dotenv()
 
 torch.set_num_threads(8)
-
-class SpeechSynthesizer:
-    """Handles text-to-speech conversion using the TTS model."""
-
-    def __init__(self):
-        self.tts = TTS(
-            model_name="tts_models/multilingual/multi-dataset/your_tts",
-            progress_bar=False,
-        ).to("cpu")
-
-    async def generate_tts_file(self, text: str, output_path: str) -> None:
-        """Generates a TTS audio file from the provided text."""
-        if not text:
-            return
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: self.tts.tts_to_file(
-                text=text,
-                speaker=self.tts.speakers[2],
-                file_path=output_path,
-                language='pt-br'
-            )
-        )
-
 
 class DiscordBot(commands.Cog):
     def __init__(self, bot: commands.Bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
