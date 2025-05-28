@@ -152,23 +152,19 @@ class DiscordBot(commands.Cog):
         )
         self.can_release_processing = True
 
-    async def process_voice(self, data: voice_recv.VoiceData, user: discord.User) -> None:
-        """Handles incoming voice data from a user."""
-        print(f"Voice data received from user: {user}")
-        if user not in self.pcm_buffers:
-            self.pcm_buffers[user] = []
-        self.pcm_buffers[user].append(data.pcm)
-        self.last_audio_time = datetime.now()
-
-        if self.processing_task is None or self.processing_task.done():
-            self.processing_task = self.loop.create_task(self.process_audio())
 
     @commands.command()
     async def test(self, ctx: commands.Context) -> None:
         """Connects the bot to the user's voice channel for testing."""
         def callback(user, data: voice_recv.VoiceData):
             if not self.llm.is_processing:
-                self.loop.create_task(self.process_voice(data, user))
+                print(f"Voice data received from user: {user}")
+                if user not in self.pcm_buffers:
+                    self.pcm_buffers[user] = []
+                self.pcm_buffers[user].append(data.pcm)
+                self.last_audio_time = datetime.now()
+                if self.processing_task is None or self.processing_task.done():
+                    self.processing_task = self.loop.create_task(self.process_audio())
 
         self.context = ctx
         self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
