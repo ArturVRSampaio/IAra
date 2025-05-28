@@ -71,6 +71,11 @@ class DiscordBot(commands.Cog):
             print(f"Error playing {audio_file}: {e}")
             return False
 
+    async def transcribe_for_user(self, user):
+        pcm_chunks = self.pcm_buffers.get(user, [])
+        transcript = stt.transcribe_audio(pcm_chunks)
+        return f"{user} says: {transcript}\n" if transcript else ""
+
     async def process_audio(self) -> None:
         """Processes buffered audio and triggers LLM responses."""
         while self.last_audio_time is not None:
@@ -84,29 +89,23 @@ class DiscordBot(commands.Cog):
                 self.llm.is_processing = True
                 self.can_release_processing = False
 
-                # Transcribe audio for all users in parallel
-                async def transcribe_for_user(user):
-                    pcm_chunks = self.pcm_buffers.get(user, [])
-                    transcript = stt.transcribe_audio(pcm_chunks)
-                    return f"{user} says: {transcript}\n" if transcript else ""
-
-                tasks = [transcribe_for_user(user) for user in self.pcm_buffers]
+                tasks = [self.transcribe_for_user(user) for user in self.pcm_buffers]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                transcript = ""
+                full_transcript = ""
                 for result in results:
                     if isinstance(result, str) and result:
-                        transcript += result
+                        full_transcript += result
                         print(f"[TRANSCRIPT] {result}")
                         await self.context.send(f"**{result.strip()}**")
 
-                if not transcript:
+                if not full_transcript:
                     self.can_release_processing = True
 
                 self.pcm_buffers.clear()
 
-                if transcript:
-                    await self.ask_llm_and_process(transcript)
+                if full_transcript:
+                    await self.ask_llm_and_process(full_transcript)
 
             await asyncio.sleep(0.1)  # Avoid busy-waiting
 
