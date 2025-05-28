@@ -3,17 +3,16 @@ import os
 import re
 import tempfile
 from datetime import datetime, timedelta
-from io import BytesIO
 
 import discord
 import torch
 import torchaudio
 from discord.ext import commands, voice_recv
 from dotenv import load_dotenv
-from faster_whisper import WhisperModel
-from pydub import AudioSegment
+
 
 from LLMAgent import LLMAgent
+from STT import STT
 from SpeechSynthesizer import SpeechSynthesizer
 from VTubeStudioTalk import VTubeStudioTalk
 
@@ -22,13 +21,14 @@ load_dotenv()
 torch.set_num_threads(8)
 
 class DiscordBot(commands.Cog):
-    def __init__(self, bot: commands.Bot, llm: LLMAgent, speech_synth: SpeechSynthesizer):
+    def __init__(self, bot: commands.Bot, llm: LLMAgent, speech_synth: SpeechSynthesizer, stt: STT):
         """Initializes the bot with dependencies."""
-        self.can_release_processing = True
-        self.vts_talk = None
+        self.stt = stt
         self.bot = bot
         self.llm = llm
+        self.vts_talk = None
         self.speech_synth = speech_synth
+        self.can_release_processing = True
         self.audio_queue = []
         self.pcm_buffers = {}  # Maps user_id to list of PCM audio chunks
         self.last_audio_time = None  # Timestamp of the last audio packet
@@ -37,40 +37,7 @@ class DiscordBot(commands.Cog):
         self.context = None  # Stores Discord context for sending messages
         self.voice_client = None  # Stores the voice client for playback
         self.synthesis_task_queue = asyncio.Queue()  # Queue for audio synthesis tasks
-        self.model = WhisperModel(
-            "turbo",
-            cpu_threads=4,
-            num_workers=5,
-            device="auto",
-        )
 
-    def transcribe_audio(self, user: discord.User) -> str:
-        """Transcribes audio chunks for a user into text."""
-        pcm_chunks = self.pcm_buffers.get(user, [])
-        if not pcm_chunks:
-            return ""
-
-        # Combine PCM chunks and convert to mono WAV
-        raw_pcm = b"".join(pcm_chunks)
-        audio = AudioSegment(
-            data=raw_pcm,
-            sample_width=2,
-            frame_rate=48000,
-            channels=2,
-        ).set_channels(1)  # Convert to mono for Whisper
-
-        wav_buffer = BytesIO()
-        audio.export(wav_buffer, format="wav")
-        wav_buffer.seek(0)
-
-        # Transcribe audio using Whisper model
-        segments, _ = self.model.transcribe(
-            wav_buffer,
-            language="pt",
-            vad_filter=True,
-            hotwords="IAra, Vtuber"
-        )
-        return "".join(seg.text for seg in segments).strip()
 
     async def play_audio(self, audio_file: str) -> bool:
         """Plays an audio file in the voice channel and syncs with VTube Studio."""
@@ -118,7 +85,8 @@ class DiscordBot(commands.Cog):
 
                 # Transcribe audio for all users in parallel
                 async def transcribe_for_user(user):
-                    transcript = self.transcribe_audio(user)
+                    pcm_chunks = self.pcm_buffers.get(user, [])
+                    transcript = stt.transcribe_audio(pcm_chunks)
                     return f"{user} says: {transcript}\n" if transcript else ""
 
                 tasks = [transcribe_for_user(user) for user in self.pcm_buffers]
@@ -260,13 +228,13 @@ async def on_ready() -> None:
 @bot.event
 async def setup_hook() -> None:
     """Sets up the bot by adding the DiscordBot cog."""
-    await bot.add_cog(DiscordBot(bot, llm, synth))
+    await bot.add_cog(DiscordBot(bot, llm, synth, stt))
 
 
 # Instantiate dependencies
 synth = SpeechSynthesizer()
 llm = LLMAgent()
+stt = STT()
 
-# Run the bot
 with llm.getChatSession():
     bot.run(os.getenv("DISCORD_TOKEN"))
