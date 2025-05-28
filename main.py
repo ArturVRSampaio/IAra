@@ -23,6 +23,7 @@ torch.set_num_threads(8)
 class DiscordBot(commands.Cog):
     def __init__(self, bot: commands.Bot, llm: LLMAgent, speech_synth: SpeechSynthesizer, stt: STT):
         """Initializes the bot with dependencies."""
+        self.audio_task = None
         self.stt = stt
         self.bot = bot
         self.llm = llm
