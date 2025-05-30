@@ -4,6 +4,8 @@ class LLMAgent:
     def __init__(self):
         model_name = "Meta-Llama-3-8B-Instruct.Q4_0.gguf"
         # model_name = "Llama-3.2-3B-Instruct-Q4_0.gguf"
+        # model_name = "phi-3-portuguese-tom-cat-4k-instruct.Q4_0.gguf"
+
 
         # model_path = "/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
         model_path = "C:/Users/agatha/AppData/Local/nomic.ai/GPT4All/"
@@ -11,9 +13,9 @@ class LLMAgent:
         self.gpt4all = GPT4All(
             model_name,
             model_path=model_path,
-            n_ctx=1024,
+            n_ctx=2048,
             ngl=100,
-            device='kompute'
+            device='cuda'
         )
 
         self.system_input = (""                     
