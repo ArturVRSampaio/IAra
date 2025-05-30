@@ -5,7 +5,7 @@ from LLMAgent import LLMAgent
 
 def ask_and_prin_in_real_time(user_input):
     text = ""
-    response  = agent.ask(user_input)  # retorna um gerador streaming
+    response  = agent.ask(user_input)
 
     for token in response:
         text += token
@@ -24,6 +24,7 @@ with agent.getChatSession():
     print("time: " + str(end - start))
 
     start = time.time()
+    # text = ask_and_prin_in_real_time("cachal says: a minha cor favorita é amarelo \nbypass says: minha cor favorita é preto, qual a sua?")
     text = ask_and_prin_in_real_time("bypass says: minha cor favorita é preto, qual a sua?")
     end = time.time()
     print(text)

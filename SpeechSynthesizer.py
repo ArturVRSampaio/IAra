@@ -3,7 +3,7 @@ import torch
 from TTS.api import TTS
 
 
-torch.set_num_threads(8)
+torch.set_num_threads(14)
 
 class SpeechSynthesizer:
     """Handles text-to-speech conversion using the TTS model."""

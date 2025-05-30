@@ -1,117 +1,78 @@
 import asyncio
 import os
-import re
 import tempfile
 from datetime import datetime, timedelta
+import re
 
 import discord
-import torch
-import torchaudio
 from discord.ext import commands, voice_recv
 from dotenv import load_dotenv
-
 
 from LLMAgent import LLMAgent
 from STT import STT
 from SpeechSynthesizer import SpeechSynthesizer
-from VTubeStudioTalk import VTubeStudioTalk
 
 load_dotenv()
 
-torch.set_num_threads(8)
+discord_bot_instance = None
+user_voice_to_process_queue={}
+audio_to_play_queue = []
+accept_packages = True
+can_release_accept_packages=True
+stt = STT()
+llm = LLMAgent()
+tts = SpeechSynthesizer()
 
 class DiscordBot(commands.Cog):
-    def __init__(self, bot: commands.Bot, llm: LLMAgent, speech_synth: SpeechSynthesizer, stt: STT):
-        """Initializes the bot with dependencies."""
-        self.audio_task = None
-        self.stt = stt
+    def __init__(self, bot):
+        self.last_audio_time = None
         self.bot = bot
-        self.llm = llm
-        self.vts_talk = None
-        self.speech_synth = speech_synth
-        self.can_release_processing = True
-        self.audio_queue = []
-        self.pcm_buffers = {}  # Maps user_id to list of PCM audio chunks
-        self.last_audio_time = None  # Timestamp of the last audio packet
-        self.processing_task = None  # Task for processing audio
-        self.loop = None
-        self.context = None  # Stores Discord context for sending messages
-        self.voice_client = None  # Stores the voice client for playback
-        self.synthesis_task_queue = asyncio.Queue()  # Queue for audio synthesis tasks
-
+        self.voice_client = None
+        self.context = None
+        global discord_bot_instance
+        discord_bot_instance = self  # Store the instance globally
 
     async def play_audio(self, audio_file: str) -> bool:
-        """Plays an audio file in the voice channel and syncs with VTube Studio."""
-        if not self.voice_client or not self.voice_client.is_connected():
-            self.voice_client = await self.context.author.voice.channel.connect()
-
         if not os.path.exists(audio_file):
-            await self.context.send(f"Audio file not found: {audio_file}")
+            print(f"Audio file not found: {audio_file}")
             return False
 
-        try:
-            audio_source = discord.FFmpegPCMAudio(audio_file, executable="ffmpeg")
-            playback_done = asyncio.Event()
+        audio_source = discord.FFmpegPCMAudio(audio_file, executable="ffmpeg")
+        playback_done = asyncio.Event()
 
-            def after_playback(error):
-                if error:
-                    print(f"Playback error: {error}")
-                self.loop.call_soon_threadsafe(playback_done.set)
+        self.voice_client.play(audio_source, after=lambda e: playback_done.set())
+        await playback_done.wait()
+        return True
 
-            if not self.voice_client.is_playing():
-                waveform, sample_rate = torchaudio.load(audio_file)
-                self.vts_talk.run_sync_mouth(waveform, sample_rate)
-                self.voice_client.play(audio_source, after=after_playback)
-                await playback_done.wait()
-                return True
-            else:
-                await self.context.send("Bot is already playing audio. Adding to queue.")
-                return False
-        except Exception as e:
-            print(f"Error playing {audio_file}: {e}")
+    @staticmethod
+    async def playAudio(audio_file: str) -> bool:
+        """Static method to play audio directly."""
+        if discord_bot_instance is None:
+            print("DiscordBot instance not initialized.")
             return False
+        return await discord_bot_instance.play_audio(audio_file)
 
-    async def transcribe_for_user(self, user):
-        pcm_chunks = self.pcm_buffers.get(user, [])
-        transcript = stt.transcribe_audio(pcm_chunks)
-        return f"{user} says: {transcript}\n" if transcript else ""
+    @commands.command()
+    async def test(self, ctx: commands.Context) -> None:
+        """Connects the bot to the user's voice channel for testing."""
+        def callback(user, data: voice_recv.VoiceData):
+            self.last_audio_time = datetime.now()
+            print(f"Data received from user: {user} at {self.last_audio_time}")
+            if user not in user_voice_to_process_queue:
+                user_voice_to_process_queue[user] = []
+            user_voice_to_process_queue[user].append(data.pcm)
 
-    async def process_audio(self) -> None:
-        """Processes buffered audio and triggers LLM responses."""
-        while self.last_audio_time is not None:
-            current_time = datetime.now()
-            if (
-                self.last_audio_time
-                and self.pcm_buffers
-                and current_time - self.last_audio_time >= timedelta(seconds=1)
-                and not self.llm.is_processing
-            ):
-                self.llm.is_processing = True
-                self.can_release_processing = False
 
-                tasks = [self.transcribe_for_user(user) for user in self.pcm_buffers]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+        self.context = ctx
+        self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+        self.voice_client.listen(voice_recv.BasicSink(callback))
+        await ctx.send("Bot connected to voice channel!")
 
-                full_transcript = ""
-                for result in results:
-                    if isinstance(result, str) and result:
-                        full_transcript += result
-                        print(f"[TRANSCRIPT] {result}")
-                        await self.context.send(f"**{result.strip()}**")
-
-                if not full_transcript:
-                    self.can_release_processing = True
-
-                self.pcm_buffers.clear()
-
-                if full_transcript:
-                    await self.ask_llm_and_process(full_transcript)
-
-            await asyncio.sleep(0.1)  # Avoid busy-waiting
-
-    async def ask_llm_and_process(self, transcript: str) -> None:
+with llm.getChatSession():
+    async def ask_llm_and_process(transcript: str) -> None:
+        global can_release_accept_packages
         """Sends transcript to LLM and processes the response into audio."""
-        await self.context.send(
+        await discord_bot_instance.context.send(
             f"===============================================\n"
             f"**Full Transcript**:\n{transcript}\n"
             f"==============================================="
@@ -121,7 +82,7 @@ class DiscordBot(commands.Cog):
         buffer = ""
         sentence_end = re.compile(r"[.!?,…]")  # Sentence-ending punctuation
 
-        for token in self.llm.ask(transcript):
+        for token in llm.ask(transcript):
             full_response += token
             print(token, end="", flush=True)
             buffer += token
@@ -133,104 +94,119 @@ class DiscordBot(commands.Cog):
                 and buffer.strip()[-1] in ".!?,…"
             ):
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-                    await self.speech_synth.generate_tts_file(buffer.strip(), tmp_file.name)
-                    self.audio_queue.append(tmp_file.name)
+                    await tts.generate_tts_file(buffer.strip(), tmp_file.name)
+                    audio_to_play_queue.append(tmp_file.name)
                 buffer = ""
 
         # Process remaining text
         if buffer.strip():
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-                await self.speech_synth.generate_tts_file(buffer.strip(), tmp_file.name)
-                self.audio_queue.append(tmp_file.name)
+                await tts.generate_tts_file(buffer.strip(), tmp_file.name)
+                audio_to_play_queue.append(tmp_file.name)
                 print(f"Added to queue (final buffer): {tmp_file.name}")
 
         print(full_response)
-        await self.context.send(
+        await discord_bot_instance.context.send(
             f"===============================================\n"
             f"**Full Response**:\n**IAra says:** {full_response}\n"
             f"==============================================="
         )
-        self.can_release_processing = True
+        can_release_accept_packages = True
 
 
-    @commands.command()
-    async def test(self, ctx: commands.Context) -> None:
-        """Connects the bot to the user's voice channel for testing."""
-        def callback(user, data: voice_recv.VoiceData):
-            if not self.llm.is_processing:
-                print(f"Voice data received from user: {user}")
-                if user not in self.pcm_buffers:
-                    self.pcm_buffers[user] = []
-                self.pcm_buffers[user].append(data.pcm)
-                self.last_audio_time = datetime.now()
-                if self.processing_task is None or self.processing_task.done():
-                    self.processing_task = self.loop.create_task(self.process_audio())
 
-        self.context = ctx
-        self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
-        self.voice_client.listen(voice_recv.BasicSink(callback))
-        await ctx.send("Bot connected to voice channel!")
+    async def transcribe_for_user(user):
+        pcm_chunks = user_voice_to_process_queue.get(user, [])
+        transcript = stt.transcribe_audio(pcm_chunks)
+        return f"{user} says: {transcript}\n" if transcript else ""
 
-    async def play_audio_queue(self) -> bool:
+    async def voice_consumer():
+        global accept_packages
+        global can_release_accept_packages
+        while True:
+            if discord_bot_instance is None:
+                await asyncio.sleep(0.1)
+                continue
+
+            current_time = datetime.now()
+            if discord_bot_instance.last_audio_time:
+                if (current_time - discord_bot_instance.last_audio_time >= timedelta(seconds=1) and accept_packages and user_voice_to_process_queue):
+                    accept_packages = False
+                    can_release_accept_packages = False
+                    print("Stopped accepting packages.")
+
+                    tasks = [transcribe_for_user(user) for user in user_voice_to_process_queue]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    print("tasks release")
+                    full_transcript = ""
+                    for result in results:
+                        if isinstance(result, str) and result:
+                            full_transcript += result
+                            print(f"[TRANSCRIPT] {result}")
+                            await discord_bot_instance.context.send(f"**{result.strip()}**")
+
+                    if not full_transcript:
+                        can_release_accept_packages = True
+
+                    user_voice_to_process_queue.clear()
+
+                    if full_transcript:
+                        await ask_llm_and_process(full_transcript)
+
+            await asyncio.sleep(0.1)
+
+    async def play_audio_queue() -> bool:
         """Plays all audio files in the queue."""
-        while self.audio_queue:
-            audio_file = self.audio_queue[0]
-            success = await self.play_audio(audio_file)
+        while audio_to_play_queue:
+            audio_file = audio_to_play_queue[0]
+            success = await discord_bot_instance.play_audio(audio_file)
             if success:
                 try:
                     os.remove(audio_file)
                     print(f"Removed file: {audio_file}")
                 except Exception as e:
                     print(f"Error removing file {audio_file}: {e}")
-                self.audio_queue.pop(0)
+                audio_to_play_queue.pop(0)
             else:
                 print("Playback failed, stopping to avoid infinite loop")
                 break
-        return len(self.audio_queue) == 0
+        return len(audio_to_play_queue) == 0
 
-    async def play_audio_loop(self) -> None:
-        """Continuously checks and plays audio from the queue."""
+
+    async def voice_player():
+        global accept_packages
+        global can_release_accept_packages
         while True:
-            if len(self.audio_queue) >= 2:
-                await self.play_audio_queue()
-            elif (self.audio_queue
-                  and self.synthesis_task_queue.empty()
-                  and self.can_release_processing):
-                await self.play_audio_queue()
-            elif (self.synthesis_task_queue.empty()
-                    and self.can_release_processing):
-                    self.llm.is_processing = False
+            if len(audio_to_play_queue) >= 2:
+                await play_audio_queue()
+            elif (audio_to_play_queue
+                  and can_release_accept_packages):
+                await play_audio_queue()
+            elif can_release_accept_packages and not accept_packages:
+                accept_packages = True
+                user_voice_to_process_queue.clear()
             await asyncio.sleep(0.1)
 
-    async def cog_load(self) -> None:
-        """Initializes the cog with the event loop and audio queue."""
-        self.loop = asyncio.get_running_loop()
-        self.vts_talk = VTubeStudioTalk(self.loop)
-        await self.vts_talk.connect()
-        self.audio_queue = []
-        self.audio_task = self.loop.create_task(self.play_audio_loop())
+    async def main():
+        bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
+        @bot.event
+        async def on_ready():
+            """Logs when the bot is ready."""
+            print(f"Logged in as {bot.user} ({bot.user.id})")
 
-# Initialize bot and dependencies
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+        @bot.event
+        async def setup_hook():
+            """Sets up the bot by adding the DiscordBot cog."""
+            await bot.add_cog(DiscordBot(bot))
 
+        # Start the voice consumer and player as background tasks
+        asyncio.create_task(voice_consumer())
+        asyncio.create_task(voice_player())
 
-@bot.event
-async def on_ready() -> None:
-    """Logs when the bot is ready."""
-    print(f"Logged in as {bot.user} ({bot.user.id})")
+        # Run the bot
+        await bot.start(os.getenv("DISCORD_TOKEN"))
 
-
-@bot.event
-async def setup_hook() -> None:
-    """Sets up the bot by adding the DiscordBot cog."""
-    await bot.add_cog(DiscordBot(bot, llm, synth, stt))
-
-
-# Instantiate dependencies
-synth = SpeechSynthesizer()
-llm = LLMAgent()
-stt = STT()
-
-with llm.getChatSession():
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    if __name__ == "__main__":
+        asyncio.run(main())
