@@ -1,15 +1,7 @@
-import threading
-
-from datetime import datetime
 from gpt4all import GPT4All
 
 class LLMAgent:
     def __init__(self):
-        self.headers = {'Content-Type': 'application/json'}
-        self.is_processing = False
-        self.lock = threading.Lock()
-        self.last_response_time = datetime.now()
-
         model_name = "Meta-Llama-3-8B-Instruct.Q4_0.gguf"
         # model_name = "Llama-3.2-3B-Instruct-Q4_0.gguf"
 
@@ -45,12 +37,6 @@ class LLMAgent:
         return self.gpt4all.chat_session(system_prompt=self.system_input)
 
     def ask(self, messages):
-        with self.lock:
-            self.is_processing = True
-
-        while len(self.gpt4all._history) > 5:
-            self.gpt4all._history.pop(0)
-
         try:
             response = self.gpt4all.generate(
                 prompt=messages,
@@ -63,11 +49,8 @@ class LLMAgent:
                 repeat_last_n=64,
                 streaming=True
             )
-            self.last_response_time = datetime.now()
             return response
 
         except Exception as e:
             print("LLM ERROR:", e)
-            self.is_processing = False
-            self.last_response_time = datetime.now()
             return ""
