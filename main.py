@@ -5,12 +5,14 @@ from datetime import datetime, timedelta
 import re
 
 import discord
+import torchaudio
 from discord.ext import commands, voice_recv
 from dotenv import load_dotenv
 
 from LLMAgent import LLMAgent
 from STT import STT
 from SpeechSynthesizer import SpeechSynthesizer
+from VTubeStudioTalk import VTubeStudioTalk
 
 load_dotenv()
 
@@ -25,6 +27,7 @@ tts = SpeechSynthesizer()
 
 class DiscordBot(commands.Cog):
     def __init__(self, bot):
+        self.vts = VTubeStudioTalk()
         self.last_audio_time = None
         self.bot = bot
         self.voice_client = None
@@ -40,8 +43,16 @@ class DiscordBot(commands.Cog):
         audio_source = discord.FFmpegPCMAudio(audio_file, executable="ffmpeg")
         playback_done = asyncio.Event()
 
-        self.voice_client.play(audio_source, after=lambda e: playback_done.set())
+        waveform, sample_rate = torchaudio.load(audio_file)
+
+        mouth_task = asyncio.create_task(self.vts.sync_mouth(waveform, sample_rate))
+        asyncio.create_task(
+            asyncio.to_thread(self.voice_client.play, audio_source, signal_type="voice", after=lambda e: playback_done.set())
+        )
+
         await playback_done.wait()
+
+        mouth_task.cancel()
         return True
 
     @staticmethod
@@ -72,11 +83,11 @@ with llm.getChatSession():
     async def ask_llm_and_process(transcript: str) -> None:
         global can_release_accept_packages
         """Sends transcript to LLM and processes the response into audio."""
-        await discord_bot_instance.context.send(
+        asyncio.create_task(discord_bot_instance.context.send(
             f"===============================================\n"
             f"**Full Transcript**:\n{transcript}\n"
             f"==============================================="
-        )
+        ))
 
         full_response = ""
         buffer = ""
@@ -106,11 +117,11 @@ with llm.getChatSession():
                 print(f"Added to queue (final buffer): {tmp_file.name}")
 
         print(full_response)
-        await discord_bot_instance.context.send(
+        asyncio.create_task(discord_bot_instance.context.send(
             f"===============================================\n"
             f"**Full Response**:\n**IAra says:** {full_response}\n"
             f"==============================================="
-        )
+        ))
         can_release_accept_packages = True
 
 
@@ -144,7 +155,7 @@ with llm.getChatSession():
                         if isinstance(result, str) and result:
                             full_transcript += result
                             print(f"[TRANSCRIPT] {result}")
-                            await discord_bot_instance.context.send(f"**{result.strip()}**")
+                            asyncio.create_task(discord_bot_instance.context.send(f"**{result.strip()}**"))
 
                     if not full_transcript:
                         can_release_accept_packages = True

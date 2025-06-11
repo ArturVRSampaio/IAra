@@ -5,7 +5,6 @@ from TTS.api import TTS
 import sounddevice as sd
 import soundfile as sf
 
-
 long_text = """
 O Rock in Rio é um festival de música idealizado pelo empresário brasileiro Roberto Medina pela primeira vez em 1985. É reconhecido como um dos maiores festivais musicais do planeta. Foi originalmente organizado no Rio de Janeiro, de onde vem o nome. Tornou-se um evento de repercussão em nível mundial e teve em 2004 sua primeira edição fora do Brasil, em Lisboa, Portugal.
 
@@ -19,15 +18,13 @@ Também neste edição o festival terá um espetáculo de teatro musical especia
 """
 
 text = "It took me quite a long time to develop a voice, and now that I have it I'm not going to be silent."
-text = "levei muito tempo para desenvolver uma voz, e agora que tenho uma não vou ficar calada"
+text = "levei muito tempo para desenvolver uma voz,"# e agora que tenho uma não vou ficar calada"
 print(TTS().list_models())
-torch.set_num_threads(8)
-
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
 
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=True).to(device)
+tts = TTS("xtts", progress_bar=True).to(device)
 
 print(tts.speakers)
 print('model loaded')
@@ -36,12 +33,13 @@ start = time.time()
 
 output_file = "output.wav"
 
+
 tts.tts_to_file(text=text,
                 file_path=output_file,
-                # speaker_wav='agatha_voice.wav',
-                speaker=tts.speakers[0],
+                speaker_wav='agatha_voice.wav',
+                # speaker=tts.speakers[0],
                 language="pt",
-                split_sentences=True,
+                split_sentences=False,
                 )
 
 end = time.time()
@@ -58,8 +56,8 @@ start = time.time()
 
 tts.tts_to_file(text=text,
                 file_path="output.wav",
-                # speaker_wav='agatha_voice.wav',
-                speaker=tts.speakers[0],
+                speaker_wav='agatha_voice.wav',
+                # speaker=tts.speakers[0],
                 language="pt",
                 split_sentences=True,
                 )

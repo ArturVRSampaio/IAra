@@ -16,19 +16,21 @@ plugin_info = {
 class VTubeStudioTalk:
     """Manages VTube Studio connection and mouth animation synchronization."""
 
-    def __init__(self, loop: asyncio.AbstractEventLoop):
+    def __init__(self):
         self.vts = pyvts.vts(plugin_info=plugin_info)
-        self.loop = loop
+        self.is_connected = False
+        self.lock = asyncio.Lock()
 
     async def connect(self):
         """Initialize and authenticate VTube Studio connection."""
-        await self.vts.connect()
-        await self.vts.request_authenticate_token()
-        is_auth = await self.vts.request_authenticate()
-        print(Bcolors.OKGREEN + "VTube Studio connected : " + str(is_auth))
+        async with self.lock:
+            await self.vts.connect()
+            await self.vts.request_authenticate_token()
+            is_auth = await self.vts.request_authenticate()
+            print(Bcolors.OKGREEN + "VTube Studio connected : " + str(is_auth))
 
 
-    def get_audio_intensity(self, waveform: torch.Tensor, sample_rate: int, block_duration: float = 0.05) -> list:
+    def _get_audio_intensity(self, waveform: torch.Tensor, sample_rate: int, block_duration: float = 0.05) -> list:
         """Calculate audio intensity for each block."""
         samples = waveform.numpy().mean(axis=0)  # Convert to mono if stereo
         block_size = int(sample_rate * block_duration)
@@ -41,10 +43,12 @@ class VTubeStudioTalk:
 
     async def sync_mouth(self, waveform: torch.Tensor, sample_rate: int):
         """Sync VTube Studio mouth animation with audio."""
-        await self.connect()
-
-        intensities = self.get_audio_intensity(waveform, sample_rate, block_duration=0.05)
         start_time = time.time()
+
+        if not self.is_connected:
+            await self.connect()
+
+        intensities = self._get_audio_intensity(waveform, sample_rate, block_duration=0.05)
 
         for intensity in intensities:
             mouth_open_value = float(min(max(intensity * 10, 0), 1))
@@ -54,13 +58,13 @@ class VTubeStudioTalk:
                 weight=1.0
             )
 
-            await self.vts.request(request_msg)
-
+            try:
+                async with self.lock:
+                    await self.vts.request(request_msg)
+            except Exception as e:
+                self.is_connected = False
+                print(e)
             elapsed_time = time.time() - start_time
             expected_time = (intensities.index(intensity) + 1) * 0.05
             sleep_time = max(0, expected_time - elapsed_time)
             await asyncio.sleep(sleep_time)
-
-    def run_sync_mouth(self, waveform: torch.Tensor, sample_rate: int):
-        """Schedule mouth sync in the event loop without blocking."""
-        asyncio.run_coroutine_threadsafe(self.sync_mouth(waveform, sample_rate), self.loop)
