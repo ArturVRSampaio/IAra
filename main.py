@@ -50,6 +50,7 @@ class DiscordBot(commands.Cog):
             asyncio.to_thread(
                 self.voice_client.play,
                 source=audio_source,
+                bitrate=32,
                 signal_type="voice",
                 application="lowdelay",
                 after=lambda e: playback_done.set())
