@@ -8,7 +8,7 @@ class STT:
             "turbo",
             cpu_threads=4,
             num_workers=5,
-            device="auto",
+            device="cuda",
         )
 
     def transcribe_audio(self, pcm_chunks) -> str:

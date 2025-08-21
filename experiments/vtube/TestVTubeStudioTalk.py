@@ -1,24 +1,22 @@
 import asyncio
-
 import torchaudio
-
 from VTubeStudioTalk import VTubeStudioTalk
 
 
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+async def main():
+    vts_talk = VTubeStudioTalk()
 
-# Inicializar VTubeStudioTalk
-vts_talk = VTubeStudioTalk(loop)
+    # Connect to VTube Studio
+    await vts_talk.connect()
 
+    # Load audio file
+    audio_file = "agatha_long_voice.wav"
+    waveform, sample_rate = torchaudio.load(audio_file)
 
-loop.run_until_complete(vts_talk.connect())
-
-audio_file = "agatha_long_voice.wav"
-waveform, sample_rate = torchaudio.load(audio_file)
-loop.run_until_complete(vts_talk.sync_mouth(waveform, sample_rate))
-
-
+    # Sync mouth with audio
+    await vts_talk.sync_mouth(waveform, sample_rate)
 
 
-
+# Run the async main function
+if __name__ == "__main__":
+    asyncio.run(main())

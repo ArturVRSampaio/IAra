@@ -2,7 +2,7 @@ import time
 
 import torch
 from TTS.api import TTS
-import sounddevice as sd
+# import sounddevice as sd
 import soundfile as sf
 
 long_text = """
@@ -24,7 +24,7 @@ print(TTS().list_models())
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
 
-tts = TTS("xtts", progress_bar=True).to(device)
+tts = TTS("xtts_v2", progress_bar=True, gpu=True).to(device)
 
 print(tts.speakers)
 print('model loaded')
@@ -49,8 +49,8 @@ print("time: " + str(end - start))
 data, samplerate = sf.read("output.wav")
 print(f"Sample rate: {samplerate}, Data shape: {data.shape}")
 
-sd.play(data, samplerate)
-sd.wait()
+# sd.play(data, samplerate)
+# sd.wait()
 
 start = time.time()
 

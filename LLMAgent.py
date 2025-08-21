@@ -8,7 +8,7 @@ class LLMAgent:
 
 
         # model_path = "/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
-        model_path = "C:/Users/agatha/AppData/Local/nomic.ai/GPT4All/"
+        model_path = "C:/Users/ArturVRSampaio//AppData/Local/nomic.ai/GPT4All/"
 
         self.gpt4all = GPT4All(
             model_name,

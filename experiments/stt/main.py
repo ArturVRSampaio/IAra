@@ -10,9 +10,8 @@ def transcribe_audio(audio_path):
 
     model = WhisperModel(
         model_size_or_path="turbo",
-        device="cpu",
-        compute_type="int8_float32",  # Otimização para desempenho
-        cpu_threads=16  # Número de threads para CPU
+        device="cuda",
+        cpu_threads=16
     )
 
     # Realiza a transcrição
