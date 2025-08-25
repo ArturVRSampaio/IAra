@@ -13,9 +13,11 @@ class LLMAgent:
         self.gpt4all = GPT4All(
             model_name,
             model_path=model_path,
-            n_ctx=2048,
+            n_ctx=4096,
             ngl=100,
-            device='cuda'
+            device='cuda',
+            n_threads=16,
+            verbose=True
         )
 
         self.system_input = (""                     

@@ -81,6 +81,43 @@ class DiscordBot(commands.Cog):
         self.voice_client.listen(voice_recv.BasicSink(callback))
         await ctx.send("Bot connected to voice channel!")
 
+    @commands.command()
+    async def kickstart(self, ctx: commands.Context) -> bool:
+        """Attempts to reconnect the bot to the current voice channel to resume receiving voice data."""
+        self.context = ctx
+        try:
+            # Check if the bot is connected to a voice channel
+            if self.voice_client and self.voice_client.is_connected():
+                print("Disconnecting from voice channel to reconnect...")
+                await self.voice_client.disconnect(force=False)
+
+            # Ensure context and voice channel are available
+            if not self.context or not self.context.author.voice or not self.context.author.voice.channel:
+                print("Cannot reconnect: No valid voice channel or context found.")
+                return False
+
+            # Reconnect to the voice channel
+            print(f"Reconnecting to voice channel: {self.context.author.voice.channel.name}")
+            self.voice_client = await self.context.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+
+            # Reinitialize the voice listener
+            def callback(user, data: voice_recv.VoiceData):
+                self.last_audio_time = datetime.now()
+                print(f"Data received from user: {user} at {self.last_audio_time}")
+                if user not in user_voice_to_process_queue:
+                    user_voice_to_process_queue[user] = []
+                user_voice_to_process_queue[user].append(data.pcm)
+
+            self.voice_client.listen(voice_recv.BasicSink(callback))
+            print("Voice listener reinitialized successfully.")
+            await self.context.send("Bot reconnected to voice channel!")
+            return True
+
+        except Exception as e:
+            print(f"Error during reconnection: {e}")
+            await self.context.send(f"Failed to reconnect to voice channel: {str(e)}")
+            return False
+
 with llm.getChatSession():
     async def ask_llm_and_process(transcript: str) -> None:
         global can_release_accept_packages
