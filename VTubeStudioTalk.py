@@ -68,3 +68,18 @@ class VTubeStudioTalk:
             expected_time = (intensities.index(intensity) + 1) * 0.05
             sleep_time = max(0, expected_time - elapsed_time)
             await asyncio.sleep(sleep_time)
+
+    async def change_emotion(self, emotion_hotkey):
+        if not self.is_connected:
+            await self.connect()
+
+
+        hotkey_response = await self.vts.request(self.vts.vts_request.requestHotKeyList())
+        hotkeys = [hk['name'] for hk in hotkey_response['data']['availableHotkeys']]
+        print("Available hotkeys:", hotkeys)
+
+
+        if emotion_hotkey in hotkeys:
+            await self.vts.request(self.vts.vts_request.requestTriggerHotKey(emotion_hotkey))
+            print(f"Triggered {emotion_hotkey}")
+
