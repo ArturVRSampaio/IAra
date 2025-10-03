@@ -10,7 +10,7 @@ async def main():
     await vts_talk.connect()
 
     # Load audio file
-    audio_file = "agatha_long_voice.wav"
+    audio_file = "voice_example.wav"
     waveform, sample_rate = torchaudio.load(audio_file)
 
     # Sync mouth with audio
