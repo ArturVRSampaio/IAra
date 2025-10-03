@@ -1,7 +1,7 @@
 import asyncio
 import torch
 from TTS.api import TTS
-
+import re
 
 torch.set_num_threads(14)
 
@@ -19,6 +19,9 @@ class SpeechSynthesizer:
         """Generates a TTS audio file from the provided text."""
         if not text:
             return
+
+        pattern = r'[!.()]+'
+        text = re.sub(pattern, '', text)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None,
