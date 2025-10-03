@@ -33,7 +33,7 @@ class DiscordBot(commands.Cog):
         self.voice_client = None
         self.context = None
         global discord_bot_instance
-        discord_bot_instance = self  # Store the instance globally
+        discord_bot_instance = self
 
     async def play_audio(self, audio_file: str) -> bool:
         if not os.path.exists(audio_file):
@@ -45,7 +45,6 @@ class DiscordBot(commands.Cog):
 
         waveform, sample_rate = torchaudio.load(audio_file)
 
-        mouth_task = asyncio.create_task(self.vts.sync_mouth(waveform, sample_rate))
         asyncio.create_task(
             asyncio.to_thread(
                 self.voice_client.play,
@@ -55,6 +54,7 @@ class DiscordBot(commands.Cog):
                 application="lowdelay",
                 after=lambda e: playback_done.set())
         )
+        mouth_task = asyncio.create_task(self.vts.sync_mouth(waveform, sample_rate))
 
         await playback_done.wait()
 

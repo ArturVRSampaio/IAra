@@ -27,6 +27,7 @@ class VTubeStudioTalk:
             await self.vts.connect()
             await self.vts.request_authenticate_token()
             is_auth = await self.vts.request_authenticate()
+            self.is_connected = is_auth
             print(Bcolors.OKGREEN + "VTube Studio connected : " + str(is_auth))
 
 
@@ -52,10 +53,10 @@ class VTubeStudioTalk:
 
         for intensity in intensities:
             mouth_open_value = float(min(max(intensity * 10, 0), 1))
-            request_msg = self.vts.vts_request.requestSetParameterValue(
-                parameter="MouthOpen",
-                value=mouth_open_value,
-                weight=1.0
+            request_msg = self.vts.vts_request.requestSetMultiParameterValue(
+                parameters=["MouthOpen"],
+                values=[mouth_open_value],
+                weight=1
             )
 
             try:
@@ -63,23 +64,32 @@ class VTubeStudioTalk:
                     await self.vts.request(request_msg)
             except Exception as e:
                 self.is_connected = False
-                print(e)
             elapsed_time = time.time() - start_time
             expected_time = (intensities.index(intensity) + 1) * 0.05
             sleep_time = max(0, expected_time - elapsed_time)
             await asyncio.sleep(sleep_time)
 
-    async def change_emotion(self, emotion_hotkey):
+    async def execute_animation(self, animation_hotkey):
         if not self.is_connected:
             await self.connect()
-
 
         hotkey_response = await self.vts.request(self.vts.vts_request.requestHotKeyList())
         hotkeys = [hk['name'] for hk in hotkey_response['data']['availableHotkeys']]
         print("Available hotkeys:", hotkeys)
 
+        if animation_hotkey in hotkeys:
+            await self.vts.request(self.vts.vts_request.requestTriggerHotKey(animation_hotkey))
+            print(f"Triggered {animation_hotkey}")
 
-        if emotion_hotkey in hotkeys:
-            await self.vts.request(self.vts.vts_request.requestTriggerHotKey(emotion_hotkey))
-            print(f"Triggered {emotion_hotkey}")
 
+    async def change_expression(self):
+        if not self.is_connected:
+            await self.connect()
+
+        request_msg = self.vts.vts_request.requestSetMultiParameterValue(
+            parameters=["MouthOpen", "MouthOpen"],
+            values=[1, 1],
+            weight=1
+        )
+
+        await self.vts.request(request_msg)
