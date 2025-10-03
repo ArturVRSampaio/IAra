@@ -46,7 +46,7 @@ async def main():
     await vts.request_authenticate()
 
     # Carregar o arquivo de áudio
-    audio_file = "agatha_long_voice.wav"
+    audio_file = "voice_example.wav"
     samples, sample_rate, audio = load_audio(audio_file)
 
     # Calcular intensidades
