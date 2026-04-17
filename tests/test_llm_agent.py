@@ -1,0 +1,86 @@
+import importlib
+import sys
+from unittest.mock import MagicMock
+
+
+def _make_llm():
+    """Reload LLMAgent with fresh mocks so GPT4All is captured correctly."""
+    gpt4all_cls = MagicMock()
+    gpt4all_mod = MagicMock()
+    gpt4all_mod.GPT4All = gpt4all_cls
+    sys.modules["gpt4all"] = gpt4all_mod
+
+    import LLMAgent as _mod
+    importlib.reload(_mod)
+
+    return _mod.LLMAgent(), gpt4all_cls
+
+
+class TestLLMAgentInit:
+    def test_gpt4all_instantiated(self):
+        _, gpt4all_cls = _make_llm()
+        gpt4all_cls.assert_called_once()
+
+    def test_uses_llama_model(self):
+        _, gpt4all_cls = _make_llm()
+        args, _ = gpt4all_cls.call_args
+        assert "Meta-Llama-3-8B-Instruct" in args[0]
+
+    def test_uses_cuda(self):
+        _, gpt4all_cls = _make_llm()
+        _, kwargs = gpt4all_cls.call_args
+        assert kwargs.get("device") == "cuda"
+
+    def test_system_prompt_is_portuguese(self):
+        llm, _ = _make_llm()
+        assert "Iara" in llm.system_input
+        assert "Você" in llm.system_input or "Voce" in llm.system_input
+
+    def test_system_prompt_defines_discord_context(self):
+        llm, _ = _make_llm()
+        assert "Discord" in llm.system_input
+
+
+class TestGetChatSession:
+    def test_calls_chat_session_with_system_prompt(self):
+        llm, _ = _make_llm()
+        llm.getChatSession()
+        llm.gpt4all.chat_session.assert_called_once_with(system_prompt=llm.system_input)
+
+    def test_returns_context_manager(self):
+        llm, _ = _make_llm()
+        session = llm.getChatSession()
+        assert session is llm.gpt4all.chat_session.return_value
+
+
+class TestAsk:
+    def test_returns_generator_on_success(self):
+        llm, _ = _make_llm()
+        llm.gpt4all.generate.return_value = iter(["Olá", " mundo"])
+        assert list(llm.ask("Oi")) == ["Olá", " mundo"]
+
+    def test_generate_called_with_prompt(self):
+        llm, _ = _make_llm()
+        llm.gpt4all.generate.return_value = iter([])
+        llm.ask("pergunta teste")
+        _, kwargs = llm.gpt4all.generate.call_args
+        assert kwargs.get("prompt") == "pergunta teste"
+
+    def test_streaming_enabled(self):
+        llm, _ = _make_llm()
+        llm.gpt4all.generate.return_value = iter([])
+        llm.ask("x")
+        _, kwargs = llm.gpt4all.generate.call_args
+        assert kwargs.get("streaming") is True
+
+    def test_returns_empty_string_on_exception(self):
+        llm, _ = _make_llm()
+        llm.gpt4all.generate.side_effect = RuntimeError("model error")
+        assert llm.ask("pergunta") == ""
+
+    def test_max_tokens_set(self):
+        llm, _ = _make_llm()
+        llm.gpt4all.generate.return_value = iter([])
+        llm.ask("x")
+        _, kwargs = llm.gpt4all.generate.call_args
+        assert kwargs.get("max_tokens", 0) > 0
