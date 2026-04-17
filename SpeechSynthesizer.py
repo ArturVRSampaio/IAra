@@ -27,8 +27,8 @@ class SpeechSynthesizer:
             None,
             lambda: self.tts.tts_to_file(
                 text=text,
-                # speaker=self.tts.speakers[2],
-                speaker_wav='./experiments/TTS/coquitts/agatha_voice.wav',
+                speaker=self.tts.speakers[2],
+                # speaker_wav='./experiments/TTS/coquitts/agatha_voice.wav',
                 file_path=output_path,
                 language='pt'
             )
