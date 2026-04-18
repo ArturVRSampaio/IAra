@@ -1,71 +1,87 @@
 import asyncio
 import importlib
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def _make_synthesizer():
-    tts_cls = MagicMock()
-    tts_instance = MagicMock()
-    tts_cls.return_value.to.return_value = tts_instance
+    mock_pipeline_instance = MagicMock()
+    mock_pipeline_instance.return_value = iter([])
 
-    tts_api_mod = MagicMock()
-    tts_api_mod.TTS = tts_cls
-    sys.modules["TTS.api"] = tts_api_mod
+    mock_kokoro = MagicMock()
+    mock_kokoro.KPipeline.return_value = mock_pipeline_instance
+    sys.modules["kokoro"] = mock_kokoro
+
+    mock_sf = MagicMock()
+    sys.modules["soundfile"] = mock_sf
 
     import iara.tts as _mod
     importlib.reload(_mod)
 
-    return _mod.SpeechSynthesizer(), tts_instance
+    synth = _mod.SpeechSynthesizer()
+    return synth, mock_pipeline_instance, mock_sf
 
 
 class TestSpeechSynthesizerInit:
-    def test_tts_loaded_with_xtts_v2(self):
-        _, _ = _make_synthesizer()
-        tts_cls = sys.modules["TTS.api"].TTS
-        _, kwargs = tts_cls.call_args
-        assert kwargs.get("model_name") == "xtts_v2"
+    def test_pipeline_created_with_portuguese(self):
+        _, _, _ = _make_synthesizer()
+        mock_kokoro = sys.modules["kokoro"]
+        _, kwargs = mock_kokoro.KPipeline.call_args
+        assert kwargs.get("lang_code") == 'p'
 
-    def test_model_moved_to_cuda(self):
-        _, _ = _make_synthesizer()
-        tts_cls = sys.modules["TTS.api"].TTS
-        tts_cls.return_value.to.assert_called_with("cuda")
+    def test_default_voice_is_pf_dora(self):
+        synth, _, _ = _make_synthesizer()
+        assert synth.voice == 'pf_dora'
 
 
 class TestGenerateTTSFile:
-    def test_empty_text_does_not_call_tts(self):
-        synth, tts_instance = _make_synthesizer()
+    def test_empty_text_does_not_call_pipeline(self):
+        synth, mock_pipeline, _ = _make_synthesizer()
         asyncio.run(synth.generate_tts_file("", "/tmp/out.wav"))
-        tts_instance.tts_to_file.assert_not_called()
+        mock_pipeline.assert_not_called()
+
+    def test_whitespace_only_does_not_call_pipeline(self):
+        synth, mock_pipeline, _ = _make_synthesizer()
+        asyncio.run(synth.generate_tts_file("   ", "/tmp/out.wav"))
+        mock_pipeline.assert_not_called()
 
     def test_generates_file_for_valid_text(self):
-        synth, tts_instance = _make_synthesizer()
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        import numpy as np
+        mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
         asyncio.run(synth.generate_tts_file("Olá mundo", "/tmp/out.wav"))
-        tts_instance.tts_to_file.assert_called_once()
+        mock_pipeline.assert_called_once()
 
-    def test_output_path_passed_correctly(self):
-        synth, tts_instance = _make_synthesizer()
-        asyncio.run(synth.generate_tts_file("teste", "/tmp/resultado.wav"))
-        _, kwargs = tts_instance.tts_to_file.call_args
-        assert kwargs.get("file_path") == "/tmp/resultado.wav"
+    def test_output_path_passed_to_soundfile(self):
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        import numpy as np
+        mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
+        asyncio.run(synth.generate_tts_file("texto", "/tmp/resultado.wav"))
+        args, _ = mock_sf.write.call_args
+        assert args[0] == "/tmp/resultado.wav"
 
-    def test_language_is_portuguese(self):
-        synth, tts_instance = _make_synthesizer()
-        asyncio.run(synth.generate_tts_file("texto", "/tmp/out.wav"))
-        _, kwargs = tts_instance.tts_to_file.call_args
-        assert kwargs.get("language") == "pt"
-
-    def test_punctuation_stripped_before_tts(self):
-        synth, tts_instance = _make_synthesizer()
+    def test_punctuation_stripped_before_synthesis(self):
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        import numpy as np
+        mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
         asyncio.run(synth.generate_tts_file("Olá! (mundo).", "/tmp/out.wav"))
-        _, kwargs = tts_instance.tts_to_file.call_args
-        text_sent = kwargs.get("text")
+        _, kwargs = mock_pipeline.call_args
+        text_sent = mock_pipeline.call_args[0][0]
         assert "!" not in text_sent
         assert "(" not in text_sent
         assert ")" not in text_sent
         assert "." not in text_sent
 
-    def test_none_like_empty_string_does_not_call_tts(self):
-        synth, tts_instance = _make_synthesizer()
-        asyncio.run(synth.generate_tts_file("", "/tmp/out.wav"))
-        tts_instance.tts_to_file.assert_not_called()
+    def test_voice_passed_to_pipeline(self):
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        import numpy as np
+        mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
+        asyncio.run(synth.generate_tts_file("texto", "/tmp/out.wav"))
+        _, kwargs = mock_pipeline.call_args
+        assert kwargs.get("voice") == "pf_dora"
+
+    def test_no_audio_chunks_skips_write(self):
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        mock_pipeline.return_value = iter([("seg", "ph", None)])
+        asyncio.run(synth.generate_tts_file("texto", "/tmp/out.wav"))
+        mock_sf.write.assert_not_called()

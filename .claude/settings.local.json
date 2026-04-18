@@ -8,7 +8,9 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(.venv/Scripts/pip show *)",
-      "Bash(.venv/Scripts/python -m pytest tests/ -q)"
+      "Bash(.venv/Scripts/python -m pytest tests/ -q)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(pip install *)"
     ]
   }
 }
