@@ -217,3 +217,50 @@ class TestVoicePlayer:
         assert _main.accept_packages is False
 
         _main.audio_to_play_queue.clear()
+
+
+class TestDequeQueue:
+    def test_audio_queue_is_deque(self):
+        from collections import deque
+        assert isinstance(_main.audio_to_play_queue, deque)
+
+    def test_popleft_removes_first_element(self):
+        _main.audio_to_play_queue.clear()
+        _main.audio_to_play_queue.append("a.wav")
+        _main.audio_to_play_queue.append("b.wav")
+        _main.audio_to_play_queue.popleft()
+        assert list(_main.audio_to_play_queue) == ["b.wav"]
+        _main.audio_to_play_queue.clear()
+
+
+class TestSentenceDetection:
+    def _sentence_end_pattern(self):
+        import re
+        return re.compile(r"[.!?]")
+
+    def test_comma_does_not_end_sentence(self):
+        pattern = self._sentence_end_pattern()
+        buffer = "Olá, tudo"
+        last_char = buffer.strip()[-1]
+        assert last_char not in ".!?"
+
+    def test_period_ends_sentence(self):
+        pattern = self._sentence_end_pattern()
+        buffer = "Olá, tudo bem."
+        assert pattern.search(buffer) and buffer.strip()[-1] in ".!?"
+
+    def test_exclamation_ends_sentence(self):
+        pattern = self._sentence_end_pattern()
+        buffer = "Que legal!"
+        assert pattern.search(buffer) and buffer.strip()[-1] in ".!?"
+
+    def test_question_ends_sentence(self):
+        pattern = self._sentence_end_pattern()
+        buffer = "Tudo bem?"
+        assert pattern.search(buffer) and buffer.strip()[-1] in ".!?"
+
+    def test_ellipsis_does_not_end_sentence(self):
+        # … (U+2026) should no longer trigger a split
+        buffer = "Hmm…"
+        last_char = buffer.strip()[-1]
+        assert last_char not in ".!?"

@@ -43,10 +43,14 @@ Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 pip install -r requirements.txt
 ```
 
-Configure o `.env`:
+Copie `.env.example` para `.env` e preencha os valores:
 
 ```env
 DISCORD_TOKEN=seu_token_aqui
+
+# Opcional — sobrescreve o modelo GPT4All
+GPT4ALL_MODEL_NAME=Meta-Llama-3-8B-Instruct.Q4_0.gguf
+GPT4ALL_MODEL_PATH=~/AppData/Local/nomic.ai/GPT4All/
 ```
 
 Na primeira execução, o VTube Studio pedirá autorização para o plugin **"Iara VTuber"**. O token será salvo em `token.txt`.
@@ -75,6 +79,8 @@ IAra/
 ├── SpeechSynthesizer.py
 ├── VTubeStudioTalk.py
 ├── Bcolors.py
+├── tests/             # Suite de testes (pytest)
 ├── experiments/       # Protótipos e testes por subsistema
+├── .env.example
 └── .env
 ```

@@ -15,6 +15,13 @@ Workflow for making code changes in this project. Always follow this order:
 
 4. **Fix failures before proceeding** — if tests fail after a change, fix them before moving on to the next task.
 
+5. **Check the README** — after every change, review `README.md` and update it if any of the following changed:
+   - Pipeline or data flow
+   - Module responsibilities
+   - Commands or bot usage
+   - Environment variables (`.env.example` is the reference)
+   - Dependencies or setup steps
+
 ## Quick reference
 
 - Run tests manually: `.venv/Scripts/python -m pytest tests/ -v`

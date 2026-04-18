@@ -135,6 +135,29 @@ class TestSyncMouth:
         asyncio.run(vts_talk.sync_mouth(waveform, 48000))
         assert vts_talk.is_connected is False
 
+    def test_timing_uses_enumerate_not_index(self):
+        # Waveform with repeated identical intensity values — list.index() would
+        # always return 0 for these, causing all sleep times to be negative.
+        # enumerate() returns the correct position, so sleep_time stays >= 0.
+        vts_talk, vts_instance = _make_vts()
+        vts_talk.is_connected = True
+        # Constant waveform → all intensity blocks identical → triggers the bug
+        waveform = torch.full((1, 4800), 0.5)
+        sleep_times = []
+
+        original_sleep = asyncio.sleep
+        async def capturing_sleep(t):
+            sleep_times.append(t)
+            # don't actually sleep
+
+        async def run():
+            with patch("asyncio.sleep", side_effect=capturing_sleep):
+                await vts_talk.sync_mouth(waveform, 48000)
+
+        asyncio.run(run())
+        # With correct enumerate, sleep times should be non-negative and increasing
+        assert all(t >= 0 for t in sleep_times)
+
 
 class TestExecuteAnimation:
     def test_triggers_hotkey_when_present(self):

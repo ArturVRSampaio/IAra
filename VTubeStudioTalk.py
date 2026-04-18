@@ -51,7 +51,7 @@ class VTubeStudioTalk:
 
         intensities = self._get_audio_intensity(waveform, sample_rate, block_duration=0.05)
 
-        for intensity in intensities:
+        for i, intensity in enumerate(intensities):
             mouth_open_value = float(min(max(intensity * 10, 0), 1))
             request_msg = self.vts.vts_request.requestSetMultiParameterValue(
                 parameters=["MouthOpen"],
@@ -65,7 +65,7 @@ class VTubeStudioTalk:
             except Exception as e:
                 self.is_connected = False
             elapsed_time = time.time() - start_time
-            expected_time = (intensities.index(intensity) + 1) * 0.05
+            expected_time = (i + 1) * 0.05
             sleep_time = max(0, expected_time - elapsed_time)
             await asyncio.sleep(sleep_time)
 

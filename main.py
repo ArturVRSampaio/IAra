@@ -1,6 +1,7 @@
 import asyncio
 import os
 import tempfile
+from collections import deque
 from datetime import datetime, timedelta
 import re
 
@@ -18,7 +19,7 @@ load_dotenv()
 
 discord_bot_instance = None
 user_voice_to_process_queue={}
-audio_to_play_queue = []
+audio_to_play_queue = deque()
 accept_packages = True
 can_release_accept_packages=True
 stt = STT()
@@ -130,7 +131,7 @@ with llm.getChatSession():
 
         full_response = ""
         buffer = ""
-        sentence_end = re.compile(r"[.!?,…]")  # Sentence-ending punctuation
+        sentence_end = re.compile(r"[.!?]")
 
         for token in llm.ask(transcript):
             full_response += token
@@ -141,7 +142,7 @@ with llm.getChatSession():
             if (
                 sentence_end.search(buffer)
                 and len(buffer.strip().split()) >= 3
-                and buffer.strip()[-1] in ".!?,…"
+                and buffer.strip()[-1] in ".!?"
             ):
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
                     await tts.generate_tts_file(buffer.strip(), tmp_file.name)
@@ -214,7 +215,7 @@ with llm.getChatSession():
                     print(f"Removed file: {audio_file}")
                 except Exception as e:
                     print(f"Error removing file {audio_file}: {e}")
-                audio_to_play_queue.pop(0)
+                audio_to_play_queue.popleft()
             else:
                 print("Playback failed, stopping to avoid infinite loop")
                 break

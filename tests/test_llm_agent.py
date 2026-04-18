@@ -1,6 +1,7 @@
 import importlib
+import os
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def _make_llm():
@@ -30,6 +31,26 @@ class TestLLMAgentInit:
         _, gpt4all_cls = _make_llm()
         _, kwargs = gpt4all_cls.call_args
         assert kwargs.get("device") == "cuda"
+
+    def test_model_path_from_env_var(self):
+        with patch.dict(os.environ, {"GPT4ALL_MODEL_PATH": "/custom/path/"}):
+            _, gpt4all_cls = _make_llm()
+            _, kwargs = gpt4all_cls.call_args
+            assert kwargs.get("model_path") == "/custom/path/"
+
+    def test_model_name_from_env_var(self):
+        with patch.dict(os.environ, {"GPT4ALL_MODEL_NAME": "custom-model.gguf"}):
+            _, gpt4all_cls = _make_llm()
+            args, _ = gpt4all_cls.call_args
+            assert args[0] == "custom-model.gguf"
+
+    def test_model_path_has_default(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("GPT4ALL_MODEL_PATH", None)
+            _, gpt4all_cls = _make_llm()
+            _, kwargs = gpt4all_cls.call_args
+            assert kwargs.get("model_path") is not None
+            assert len(kwargs.get("model_path")) > 0
 
     def test_system_prompt_is_portuguese(self):
         llm, _ = _make_llm()

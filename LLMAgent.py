@@ -1,14 +1,11 @@
+import os
+
 from gpt4all import GPT4All
 
 class LLMAgent:
     def __init__(self):
-        model_name = "Meta-Llama-3-8B-Instruct.Q4_0.gguf"
-        # model_name = "Llama-3.2-3B-Instruct-Q4_0.gguf"
-        # model_name = "phi-3-portuguese-tom-cat-4k-instruct.Q4_0.gguf"
-
-
-        # model_path = "/home/arturvrsampaio/.local/share/nomic.ai/GPT4All/"
-        model_path = "C:/Users/ArturVRSampaio//AppData/Local/nomic.ai/GPT4All/"
+        model_name = os.getenv("GPT4ALL_MODEL_NAME", "Meta-Llama-3-8B-Instruct.Q4_0.gguf")
+        model_path = os.getenv("GPT4ALL_MODEL_PATH", os.path.expanduser("~/AppData/Local/nomic.ai/GPT4All/"))
 
         self.gpt4all = GPT4All(
             model_name,
