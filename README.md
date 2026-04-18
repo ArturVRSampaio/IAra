@@ -40,14 +40,14 @@ Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 
 ### Discord API
 
-O bot utiliza **`discord.py==2.5.2`** e a extensão experimental **`discord-ext-voice-recv`**, que habilita o recebimento de áudio dos canais de voz. A extensão **não está no PyPI** e deve ser instalada diretamente do GitHub:
+O bot utiliza **`discord.py==2.7.1`** e a extensão experimental **`discord-ext-voice-recv`**, que habilita o recebimento de áudio dos canais de voz. A extensão **não está no PyPI** e deve ser instalada diretamente do GitHub:
 
 ```bash
-pip install discord.py==2.5.2
+pip install discord.py==2.7.1
 pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 ```
 
-> `discord-ext-voice-recv` é necessária para capturar o PCM de cada usuário separadamente. O `discord.py` padrão não suporta recebimento de voz. Use exatamente a versão `2.5.2` — outras versões podem ser incompatíveis com a extensão.
+> `discord-ext-voice-recv` é necessária para capturar o PCM de cada usuário separadamente. O `discord.py` padrão não suporta recebimento de voz. A versão `2.7.1+` é necessária para suporte ao protocolo **DAVE** (Discord Audio Video Encryption), introduzido pelo Discord em 2024 — versões anteriores falham silenciosamente na conexão de voz.
 
 ## Instalação
 
@@ -81,6 +81,25 @@ Comandos disponíveis no Discord:
 | `!test` | Conecta o bot ao canal de voz do usuário |
 | `!kickstart` | Reconecta o bot ao canal de voz |
 | `!ping` | Verifica se o bot está online |
+
+## Troubleshooting
+
+### Bot entra e sai do canal de voz em loop
+
+**Sintoma:** O bot conecta ao canal de voz e desconecta imediatamente, repetindo em loop. Nenhuma mensagem de erro aparece no chat. O problema ocorre em qualquer rede ou máquina.
+
+**Causa:** O Discord introduziu o protocolo **DAVE** (Discord Audio Video Encryption) em 2024 para criptografia ponta-a-ponta no áudio. Versões antigas do `discord-ext-voice-recv` (anteriores a `0.5.3a180`) e do `discord.py` (anteriores a `2.7.1`) não implementam o handshake DAVE, então a conexão UDP de voz nunca se estabelece, causando o loop.
+
+**Solução:** Atualize as dependências:
+
+```bash
+pip install "discord.py==2.7.1"
+pip install --force-reinstall git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
+```
+
+Verifique se o pacote `davey` foi instalado como dependência do `discord-ext-voice-recv`. Se não aparecer, a versão instalada ainda não tem suporte a DAVE.
+
+---
 
 ## Estrutura do Projeto
 
