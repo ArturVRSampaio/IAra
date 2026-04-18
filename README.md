@@ -22,12 +22,13 @@ Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `main.py` | Orquestrador async, bot Discord, filas de voz e áudio |
-| `STT.py` | Transcrição com faster-whisper, VAD, PT-BR |
-| `LLMAgent.py` | Wrapper GPT4All, personalidade da Iara, streaming |
-| `SpeechSynthesizer.py` | Síntese de voz com XTTS v2, executa em thread executor |
-| `VTubeStudioTalk.py` | WebSocket com VTube Studio, sincronização da boca |
-| `Bcolors.py` | Utilitário de cores ANSI para o terminal |
+| `main.py` | Ponto de entrada — chama `iara.bot.main()` |
+| `iara/bot.py` | Orquestrador async, bot Discord, filas de voz e áudio |
+| `iara/stt.py` | Transcrição com faster-whisper, VAD, PT-BR |
+| `iara/llm.py` | Wrapper GPT4All, personalidade da Iara, streaming |
+| `iara/tts.py` | Síntese de voz com XTTS v2, executa em thread executor |
+| `iara/vtube.py` | WebSocket com VTube Studio, sincronização da boca |
+| `iara/utils.py` | Utilitário de cores ANSI para o terminal |
 
 ## Requisitos
 
@@ -85,14 +86,16 @@ Comandos disponíveis no Discord:
 
 ```
 IAra/
-├── main.py
-├── LLMAgent.py
-├── STT.py
-├── SpeechSynthesizer.py
-├── VTubeStudioTalk.py
-├── Bcolors.py
-├── tests/             # Suite de testes (pytest)
-├── experiments/       # Protótipos e testes por subsistema
+├── main.py            # ponto de entrada
+├── iara/              # pacote principal
+│   ├── bot.py
+│   ├── stt.py
+│   ├── llm.py
+│   ├── tts.py
+│   ├── vtube.py
+│   └── utils.py
+├── tests/             # suite de testes (pytest)
+├── experiments/       # protótipos e testes por subsistema
 ├── .env.example
 └── .env
 ```

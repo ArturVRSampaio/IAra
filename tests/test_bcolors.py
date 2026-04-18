@@ -1,4 +1,4 @@
-from Bcolors import Bcolors
+from iara.utils import Bcolors
 
 
 def test_all_codes_are_strings():

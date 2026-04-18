@@ -6,7 +6,9 @@
       "Bash(powershell.exe -NoProfile -Command \".\\\\.venv\\\\Scripts\\\\python -m pytest tests -q\")",
       "Bash(powershell.exe -NoProfile -Command \"Get-Content .claude/settings.local.json | ConvertFrom-Json | ConvertTo-Json -Depth 10\")",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(.venv/Scripts/pip show *)",
+      "Bash(.venv/Scripts/python -m pytest tests/ -q)"
     ]
   }
 }

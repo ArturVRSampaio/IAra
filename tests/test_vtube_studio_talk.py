@@ -2,7 +2,6 @@ import asyncio
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import torch
 
 
@@ -12,7 +11,7 @@ def _make_vts():
     vts_instance.request_authenticate.return_value = True
     vts_cls.return_value = vts_instance
     sys.modules["pyvts"].vts = vts_cls
-    from VTubeStudioTalk import VTubeStudioTalk
+    from iara.vtube import VTubeStudioTalk
     return VTubeStudioTalk(), vts_instance
 
 
@@ -136,26 +135,19 @@ class TestSyncMouth:
         assert vts_talk.is_connected is False
 
     def test_timing_uses_enumerate_not_index(self):
-        # Waveform with repeated identical intensity values — list.index() would
-        # always return 0 for these, causing all sleep times to be negative.
-        # enumerate() returns the correct position, so sleep_time stays >= 0.
         vts_talk, vts_instance = _make_vts()
         vts_talk.is_connected = True
-        # Constant waveform → all intensity blocks identical → triggers the bug
         waveform = torch.full((1, 4800), 0.5)
         sleep_times = []
 
-        original_sleep = asyncio.sleep
         async def capturing_sleep(t):
             sleep_times.append(t)
-            # don't actually sleep
 
         async def run():
             with patch("asyncio.sleep", side_effect=capturing_sleep):
                 await vts_talk.sync_mouth(waveform, 48000)
 
         asyncio.run(run())
-        # With correct enumerate, sleep times should be non-negative and increasing
         assert all(t >= 0 for t in sleep_times)
 
 
@@ -169,7 +161,7 @@ class TestExecuteAnimation:
         }
 
         asyncio.run(vts_talk.execute_animation(hotkey_name))
-        assert vts_instance.request.call_count == 2  # list + trigger
+        assert vts_instance.request.call_count == 2
 
     def test_does_not_trigger_when_hotkey_missing(self):
         vts_talk, vts_instance = _make_vts()
@@ -179,7 +171,7 @@ class TestExecuteAnimation:
         }
 
         asyncio.run(vts_talk.execute_animation("Wave"))
-        assert vts_instance.request.call_count == 1  # only list call
+        assert vts_instance.request.call_count == 1
 
 
 class TestChangeExpression:

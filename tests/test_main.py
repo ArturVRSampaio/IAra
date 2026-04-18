@@ -1,7 +1,7 @@
 """
-Tests for main.py.
+Tests for iara/bot.py.
 
-main.py instantiates STT, LLMAgent, SpeechSynthesizer at module level and defines
+iara.bot instantiates STT, LLMAgent, SpeechSynthesizer at module level and defines
 several async functions inside a `with llm.getChatSession():` block. All heavy
 dependencies are mocked via conftest.py before this module is imported.
 """
@@ -9,27 +9,23 @@ import asyncio
 import os
 import sys
 import tempfile
+from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 
-def _import_main():
-    """Import main with all ML constructors mocked out."""
-    # Ensure load_dotenv is a no-op
+def _import_bot():
+    """Import iara.bot with all ML constructors mocked out."""
     sys.modules["dotenv"].load_dotenv = MagicMock()
 
-    # Make LLMAgent.getChatSession() return a usable context manager
-    from LLMAgent import LLMAgent  # noqa: F401 - triggers mock wiring
-
     import importlib
-    if "main" in sys.modules:
-        return sys.modules["main"]
-    return importlib.import_module("main")
+    if "iara.bot" in sys.modules:
+        return sys.modules["iara.bot"]
+    return importlib.import_module("iara.bot")
 
 
-# Import once for the whole test session
-_main = _import_main()
+_main = _import_bot()
 
 
 class TestDiscordBotPlayAudio:
@@ -48,14 +44,11 @@ class TestDiscordBotPlayAudio:
     def test_existing_file_returns_true(self):
         bot = self._bot()
 
-        # Create a real temp wav so os.path.exists passes
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            f.write(b"\x00" * 44)  # minimal placeholder
+            f.write(b"\x00" * 44)
             tmp_path = f.name
 
         try:
-            playback_done_event = asyncio.Event()
-
             def fake_play(source, **kwargs):
                 after = kwargs.get("after")
                 if after:
@@ -64,7 +57,6 @@ class TestDiscordBotPlayAudio:
             bot.voice_client.play = MagicMock(side_effect=fake_play)
             sys.modules["torchaudio"].load.return_value = (MagicMock(), 48000)
 
-            # sync_mouth needs to be a no-op coroutine
             with patch.object(bot.vts, "sync_mouth", new_callable=AsyncMock):
                 result = asyncio.run(bot.play_audio(tmp_path))
 
@@ -107,7 +99,6 @@ class TestAskLLMAndProcess:
         _main.audio_to_play_queue.clear()
         _main.can_release_accept_packages = False
 
-        # Mock discord context
         ctx_mock = AsyncMock()
         _main.discord_bot_instance = MagicMock()
         _main.discord_bot_instance.context = ctx_mock
@@ -124,8 +115,7 @@ class TestAskLLMAndProcess:
         asyncio.run(_main.ask_llm_and_process("user says: oi"))
         assert len(_main.audio_to_play_queue) >= 1
 
-        # Cleanup temp files
-        for f in _main.audio_to_play_queue:
+        for f in list(_main.audio_to_play_queue):
             try:
                 os.unlink(f)
             except Exception:
@@ -221,7 +211,6 @@ class TestVoicePlayer:
 
 class TestDequeQueue:
     def test_audio_queue_is_deque(self):
-        from collections import deque
         assert isinstance(_main.audio_to_play_queue, deque)
 
     def test_popleft_removes_first_element(self):
@@ -239,10 +228,8 @@ class TestSentenceDetection:
         return re.compile(r"[.!?]")
 
     def test_comma_does_not_end_sentence(self):
-        pattern = self._sentence_end_pattern()
         buffer = "Olá, tudo"
-        last_char = buffer.strip()[-1]
-        assert last_char not in ".!?"
+        assert buffer.strip()[-1] not in ".!?"
 
     def test_period_ends_sentence(self):
         pattern = self._sentence_end_pattern()
@@ -260,7 +247,5 @@ class TestSentenceDetection:
         assert pattern.search(buffer) and buffer.strip()[-1] in ".!?"
 
     def test_ellipsis_does_not_end_sentence(self):
-        # … (U+2026) should no longer trigger a split
         buffer = "Hmm…"
-        last_char = buffer.strip()[-1]
-        assert last_char not in ".!?"
+        assert buffer.strip()[-1] not in ".!?"

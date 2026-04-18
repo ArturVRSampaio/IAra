@@ -5,13 +5,12 @@ from unittest.mock import MagicMock, patch
 
 
 def _make_llm():
-    """Reload LLMAgent with fresh mocks so GPT4All is captured correctly."""
     gpt4all_cls = MagicMock()
     gpt4all_mod = MagicMock()
     gpt4all_mod.GPT4All = gpt4all_cls
     sys.modules["gpt4all"] = gpt4all_mod
 
-    import LLMAgent as _mod
+    import iara.llm as _mod
     importlib.reload(_mod)
 
     return _mod.LLMAgent(), gpt4all_cls
@@ -45,12 +44,11 @@ class TestLLMAgentInit:
             assert args[0] == "custom-model.gguf"
 
     def test_model_path_has_default(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("GPT4ALL_MODEL_PATH", None)
-            _, gpt4all_cls = _make_llm()
-            _, kwargs = gpt4all_cls.call_args
-            assert kwargs.get("model_path") is not None
-            assert len(kwargs.get("model_path")) > 0
+        os.environ.pop("GPT4ALL_MODEL_PATH", None)
+        _, gpt4all_cls = _make_llm()
+        _, kwargs = gpt4all_cls.call_args
+        assert kwargs.get("model_path") is not None
+        assert len(kwargs.get("model_path")) > 0
 
     def test_system_prompt_is_portuguese(self):
         llm, _ = _make_llm()

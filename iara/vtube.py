@@ -1,28 +1,26 @@
 import asyncio
 import time
+
 import numpy as np
 import pyvts
 import torch
 
-from Bcolors import Bcolors
+from iara.utils import Bcolors
 
-# VTube Studio plugin info
 plugin_info = {
     "plugin_name": "Iara VTuber",
     "developer": "Artur",
     "authentication_token_path": "./token.txt"
 }
 
-class VTubeStudioTalk:
-    """Manages VTube Studio connection and mouth animation synchronization."""
 
+class VTubeStudioTalk:
     def __init__(self):
         self.vts = pyvts.vts(plugin_info=plugin_info)
         self.is_connected = False
         self.lock = asyncio.Lock()
 
     async def connect(self):
-        """Initialize and authenticate VTube Studio connection."""
         async with self.lock:
             await self.vts.connect()
             await self.vts.request_authenticate_token()
@@ -30,10 +28,8 @@ class VTubeStudioTalk:
             self.is_connected = is_auth
             print(Bcolors.OKGREEN + "VTube Studio connected : " + str(is_auth))
 
-
     def _get_audio_intensity(self, waveform: torch.Tensor, sample_rate: int, block_duration: float = 0.05) -> list:
-        """Calculate audio intensity for each block."""
-        samples = waveform.numpy().mean(axis=0)  # Convert to mono if stereo
+        samples = waveform.numpy().mean(axis=0)
         block_size = int(sample_rate * block_duration)
         intensities = []
         for i in range(0, len(samples), block_size):
@@ -43,7 +39,6 @@ class VTubeStudioTalk:
         return intensities
 
     async def sync_mouth(self, waveform: torch.Tensor, sample_rate: int):
-        """Sync VTube Studio mouth animation with audio."""
         start_time = time.time()
 
         if not self.is_connected:
@@ -80,7 +75,6 @@ class VTubeStudioTalk:
         if animation_hotkey in hotkeys:
             await self.vts.request(self.vts.vts_request.requestTriggerHotKey(animation_hotkey))
             print(f"Triggered {animation_hotkey}")
-
 
     async def change_expression(self):
         if not self.is_connected:

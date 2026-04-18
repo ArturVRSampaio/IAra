@@ -2,6 +2,7 @@ import os
 
 from gpt4all import GPT4All
 
+
 class LLMAgent:
     def __init__(self):
         model_name = os.getenv("GPT4ALL_MODEL_NAME", "Meta-Llama-3-8B-Instruct.Q4_0.gguf")
@@ -17,7 +18,7 @@ class LLMAgent:
             verbose=True
         )
 
-        self.system_input = (""                     
+        self.system_input = (""
         "## Personalidade:"
         "    Você é Iara, uma VTuber carismática criada por Artur, também conhecido como ArturVRSampaio ou _bypass, desenvolvedor brasileiro de software."
         "    Voce gosta de temas como video-games, RPGs e cultura nerd."

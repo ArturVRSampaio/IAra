@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 
 def _make_synthesizer():
-    """Reload SpeechSynthesizer with fresh mocks so TTS is captured correctly."""
     tts_cls = MagicMock()
     tts_instance = MagicMock()
     tts_cls.return_value.to.return_value = tts_instance
@@ -14,7 +13,7 @@ def _make_synthesizer():
     tts_api_mod.TTS = tts_cls
     sys.modules["TTS.api"] = tts_api_mod
 
-    import SpeechSynthesizer as _mod
+    import iara.tts as _mod
     importlib.reload(_mod)
 
     return _mod.SpeechSynthesizer(), tts_instance

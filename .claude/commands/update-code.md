@@ -4,7 +4,7 @@ Workflow for making code changes in this project. Always follow this order:
 
 ## Rules
 
-1. **Update source code** — make the requested change in the relevant module (`main.py`, `LLMAgent.py`, `STT.py`, `SpeechSynthesizer.py`, `VTubeStudioTalk.py`, `Bcolors.py`).
+1. **Update source code** — make the requested change in the relevant module (`iara/bot.py`, `iara/llm.py`, `iara/stt.py`, `iara/tts.py`, `iara/vtube.py`, `iara/utils.py`).
 
 2. **Update tests** — update or add tests in `tests/` to cover the change. Every source change must have a corresponding test change. No exceptions.
    - New function → new test

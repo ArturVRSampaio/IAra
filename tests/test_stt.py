@@ -5,12 +5,10 @@ from unittest.mock import MagicMock
 
 
 def _make_pcm_chunk(num_samples: int = 480, channels: int = 2) -> bytes:
-    """Return silent 16-bit PCM bytes (48 kHz stereo by default)."""
     return struct.pack(f"<{num_samples * channels}h", *([0] * num_samples * channels))
 
 
 def _make_stt():
-    """Reload STT with fresh mocks so WhisperModel is captured correctly."""
     whisper_cls = MagicMock()
     faster_whisper_mod = MagicMock()
     faster_whisper_mod.WhisperModel = whisper_cls
@@ -19,7 +17,7 @@ def _make_stt():
     pydub_mod = MagicMock()
     sys.modules["pydub"] = pydub_mod
 
-    import STT as _mod
+    import iara.stt as _mod
     importlib.reload(_mod)
 
     return _mod.STT(), whisper_cls
