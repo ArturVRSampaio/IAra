@@ -4,3 +4,7 @@ lastVoice.wav
 .idea
 token.txt
 experiments/vtube/voice_example.wav
+__pycache__/
+*.pyc
+*.pyo
+.venv/
