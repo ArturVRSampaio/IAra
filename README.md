@@ -37,9 +37,21 @@ Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 - [VTube Studio](https://denchisoft.com/) com plugin API habilitado
 - Modelo `Meta-Llama-3-8B-Instruct.Q4_0.gguf` baixado via GPT4All
 
+### Discord API
+
+O bot utiliza **`discord.py==2.5.2`** e a extensão experimental **`discord-ext-voice-recv`**, que habilita o recebimento de áudio dos canais de voz. A extensão **não está no PyPI** e deve ser instalada diretamente do GitHub:
+
+```bash
+pip install discord.py==2.5.2
+pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
+```
+
+> `discord-ext-voice-recv` é necessária para capturar o PCM de cada usuário separadamente. O `discord.py` padrão não suporta recebimento de voz. Use exatamente a versão `2.5.2` — outras versões podem ser incompatíveis com a extensão.
+
 ## Instalação
 
 ```bash
+pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 pip install -r requirements.txt
 ```
 

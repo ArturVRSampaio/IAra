@@ -1,5 +1,7 @@
 pytest
 pytest-asyncio
+discord.py==2.5.2
+discord-ext-voice-recv @ git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 transformers==4.51.3
 torch==2.6
 torchaudio==2.6
