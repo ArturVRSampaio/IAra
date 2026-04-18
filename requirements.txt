@@ -109,7 +109,7 @@ pluggy==1.6.0
 pooch==1.8.2
 preshed==3.0.13
 propcache==0.4.1
-protobuf==6.31.1
+protobuf==6.33.5
 psutil==7.0.0
 pycparser==3.0
 pydantic==2.13.2
