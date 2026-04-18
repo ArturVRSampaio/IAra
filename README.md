@@ -1,5 +1,7 @@
 # IAra
 
+![tests](https://github.com/ArturVRSampaio/IAra/actions/workflows/tests.yml/badge.svg)
+
 **I**nteligência **A**rtificial **R**aramente **A**curada
 
 IAra é uma VTuber interativa para Discord criada por [ArturVRSampaio](https://github.com/ArturVRSampaio). Ela ouve a voz dos usuários no canal, transcreve, gera respostas com um LLM local e fala de volta — com animação de boca sincronizada no VTube Studio.
