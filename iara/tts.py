@@ -8,7 +8,16 @@ from kokoro import KPipeline
 class SpeechSynthesizer:
     def __init__(self):
         self.pipeline = KPipeline(lang_code='p')
-        self.voice = 'pf_dora'
+        self.voice = self._build_voice()
+
+    def _build_voice(self):
+        dora   = self.pipeline.load_single_voice('pf_dora')
+        bella  = self.pipeline.load_single_voice('af_bella')
+        sky    = self.pipeline.load_single_voice('af_sky')
+        nova   = self.pipeline.load_single_voice('af_nova')
+        heart  = self.pipeline.load_single_voice('af_heart')
+        # 55% pf_dora to preserve PT accent, 45% split across energetic EN voices
+        return dora * 0.55 + bella * 0.20 + sky * 0.10 + nova * 0.10 + heart * 0.05
 
     async def generate_tts_file(self, text: str, output_path: str) -> None:
         if not text.strip():
