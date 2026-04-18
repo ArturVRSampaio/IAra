@@ -114,19 +114,19 @@ class DiscordBot(commands.Cog):
             return False
 
 
-with llm.getChatSession():
-    async def ask_llm_and_process(transcript: str) -> None:
-        global can_release_accept_packages
-        asyncio.create_task(discord_bot_instance.context.send(
-            f"===============================================\n"
-            f"**Full Transcript**:\n{transcript}\n"
-            f"==============================================="
-        ))
+async def ask_llm_and_process(transcript: str) -> None:
+    global can_release_accept_packages
+    asyncio.create_task(discord_bot_instance.context.send(
+        f"===============================================\n"
+        f"**Full Transcript**:\n{transcript}\n"
+        f"==============================================="
+    ))
 
-        full_response = ""
-        buffer = ""
-        sentence_end = re.compile(r"[.!?]")
+    full_response = ""
+    buffer = ""
+    sentence_end = re.compile(r"[.!?]")
 
+    with llm.getChatSession():
         for token in llm.ask(transcript):
             full_response += token
             print(token, end="", flush=True)
@@ -148,89 +148,94 @@ with llm.getChatSession():
                 audio_to_play_queue.append(tmp_file.name)
                 print(f"Added to queue (final buffer): {tmp_file.name}")
 
-        print(full_response)
-        asyncio.create_task(discord_bot_instance.context.send(
-            f"===============================================\n"
-            f"**Full Response**:\n**IAra says:** {full_response}\n"
-            f"==============================================="
-        ))
-        can_release_accept_packages = True
+    print(full_response)
+    asyncio.create_task(discord_bot_instance.context.send(
+        f"===============================================\n"
+        f"**Full Response**:\n**IAra says:** {full_response}\n"
+        f"==============================================="
+    ))
+    can_release_accept_packages = True
 
-    async def transcribe_for_user(user):
-        pcm_chunks = user_voice_to_process_queue.get(user, [])
-        transcript = stt.transcribe_audio(pcm_chunks)
-        return f"{user} says: {transcript}\n" if transcript else ""
 
-    async def voice_consumer():
-        global accept_packages
-        global can_release_accept_packages
-        while True:
-            current_time = datetime.now()
-            if (discord_bot_instance and discord_bot_instance.last_audio_time and
-                    (current_time - discord_bot_instance.last_audio_time >= timedelta(seconds=1) and
-                     accept_packages and user_voice_to_process_queue)):
-                accept_packages = False
-                can_release_accept_packages = False
-                print("Stopped accepting packages.")
+async def transcribe_for_user(user):
+    pcm_chunks = user_voice_to_process_queue.get(user, [])
+    transcript = stt.transcribe_audio(pcm_chunks)
+    return f"{user} says: {transcript}\n" if transcript else ""
 
-                tasks = [transcribe_for_user(user) for user in user_voice_to_process_queue]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                full_transcript = ""
-                for result in results:
-                    if isinstance(result, str) and result:
-                        full_transcript += result
-                        print(f"[TRANSCRIPT] {result}")
-                        asyncio.create_task(discord_bot_instance.context.send(f"**{result.strip()}**"))
+async def voice_consumer():
+    global accept_packages
+    global can_release_accept_packages
+    while True:
+        current_time = datetime.now()
+        if (discord_bot_instance and discord_bot_instance.last_audio_time and
+                (current_time - discord_bot_instance.last_audio_time >= timedelta(seconds=1) and
+                 accept_packages and user_voice_to_process_queue)):
+            accept_packages = False
+            can_release_accept_packages = False
+            print("Stopped accepting packages.")
 
-                if not full_transcript:
-                    can_release_accept_packages = True
+            tasks = [transcribe_for_user(user) for user in user_voice_to_process_queue]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                user_voice_to_process_queue.clear()
+            full_transcript = ""
+            for result in results:
+                if isinstance(result, str) and result:
+                    full_transcript += result
+                    print(f"[TRANSCRIPT] {result}")
+                    asyncio.create_task(discord_bot_instance.context.send(f"**{result.strip()}**"))
 
-                if full_transcript:
-                    await ask_llm_and_process(full_transcript)
-            await asyncio.sleep(0.1)
+            if not full_transcript:
+                can_release_accept_packages = True
 
-    async def play_audio_queue():
-        while len(audio_to_play_queue) > 0:
-            audio_file = audio_to_play_queue[0]
-            success = await discord_bot_instance.play_audio(audio_file)
+            user_voice_to_process_queue.clear()
 
-            if success:
-                try:
-                    os.remove(audio_file)
-                    print(f"Removed file: {audio_file}")
-                except Exception as e:
-                    print(f"Error removing file {audio_file}: {e}")
-                audio_to_play_queue.popleft()
-            else:
-                print("Playback failed, stopping to avoid infinite loop")
-                break
+            if full_transcript:
+                await ask_llm_and_process(full_transcript)
+        await asyncio.sleep(0.1)
 
-    async def voice_player():
-        global accept_packages
-        global can_release_accept_packages
-        while True:
-            if audio_to_play_queue:
-                await play_audio_queue()
-            elif can_release_accept_packages and not accept_packages:
-                accept_packages = True
-                user_voice_to_process_queue.clear()
-            await asyncio.sleep(0.1)
 
-    async def main():
-        bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+async def play_audio_queue():
+    while len(audio_to_play_queue) > 0:
+        audio_file = audio_to_play_queue[0]
+        success = await discord_bot_instance.play_audio(audio_file)
 
-        @bot.event
-        async def on_ready():
-            print(f"Logged in as {bot.user} ({bot.user.id})")
+        if success:
+            try:
+                os.remove(audio_file)
+                print(f"Removed file: {audio_file}")
+            except Exception as e:
+                print(f"Error removing file {audio_file}: {e}")
+            audio_to_play_queue.popleft()
+        else:
+            print("Playback failed, stopping to avoid infinite loop")
+            break
 
-        @bot.event
-        async def setup_hook():
-            await bot.add_cog(DiscordBot(bot))
 
-        asyncio.create_task(voice_consumer())
-        asyncio.create_task(voice_player())
+async def voice_player():
+    global accept_packages
+    global can_release_accept_packages
+    while True:
+        if audio_to_play_queue:
+            await play_audio_queue()
+        elif can_release_accept_packages and not accept_packages:
+            accept_packages = True
+            user_voice_to_process_queue.clear()
+        await asyncio.sleep(0.1)
 
-        await bot.start(os.getenv("DISCORD_TOKEN"))
+
+async def main():
+    bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
+    @bot.event
+    async def on_ready():
+        print(f"Logged in as {bot.user} ({bot.user.id})")
+
+    @bot.event
+    async def setup_hook():
+        await bot.add_cog(DiscordBot(bot))
+
+    asyncio.create_task(voice_consumer())
+    asyncio.create_task(voice_player())
+
+    await bot.start(os.getenv("DISCORD_TOKEN"))
