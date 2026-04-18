@@ -13,8 +13,8 @@ STT — Whisper Turbo (faster-whisper, PT-BR)
     ↓ transcrição de texto
 LLM — Meta-Llama-3-8B-Instruct via GPT4All (local, CUDA)
     ↓ resposta em streaming, frase a frase
-TTS — XTTS v2 via Coqui TTS (local, CUDA)
-    ↓ arquivos .wav
+TTS — Kokoro (pf_dora, PT-BR, local, CUDA)
+    ↓ arquivos .wav em paralelo com o playback
 Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 ```
 
@@ -26,7 +26,7 @@ Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 | `iara/bot.py` | Orquestrador async, bot Discord, filas de voz e áudio |
 | `iara/stt.py` | Transcrição com faster-whisper, VAD, PT-BR |
 | `iara/llm.py` | Wrapper GPT4All, personalidade da Iara, streaming |
-| `iara/tts.py` | Síntese de voz com XTTS v2, executa em thread executor |
+| `iara/tts.py` | Síntese de voz com Kokoro (pf_dora, PT-BR), executor single-thread |
 | `iara/vtube.py` | WebSocket com VTube Studio, sincronização da boca |
 | `iara/utils.py` | Utilitário de cores ANSI para o terminal |
 
@@ -37,6 +37,7 @@ Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 - [FFmpeg](https://ffmpeg.org/) no PATH
 - [VTube Studio](https://denchisoft.com/) com plugin API habilitado
 - Modelo `Meta-Llama-3-8B-Instruct.Q4_0.gguf` baixado via GPT4All
+- `kokoro` e `soundfile` (instalados via `requirements.txt`; o modelo Kokoro (~300MB) é baixado automaticamente na primeira execução)
 
 ### Discord API
 
@@ -55,6 +56,8 @@ pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 pip install -r requirements.txt
 ```
+
+> `kokoro` e `soundfile` estão incluídos no `requirements.txt`. O modelo de voz Kokoro (~300MB) será baixado automaticamente do HuggingFace na primeira execução.
 
 Copie `.env.example` para `.env` e preencha os valores:
 
