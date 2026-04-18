@@ -115,9 +115,9 @@ class TestAskLLMAndProcess:
         asyncio.run(_main.ask_llm_and_process("user says: oi"))
         assert len(_main.audio_to_play_queue) >= 1
 
-        for f in list(_main.audio_to_play_queue):
+        for path, _ in list(_main.audio_to_play_queue):
             try:
-                os.unlink(f)
+                os.unlink(path)
             except Exception:
                 pass
         _main.audio_to_play_queue.clear()
@@ -190,7 +190,9 @@ class TestVoicePlayer:
         assert _main.accept_packages is True
 
     def test_accept_packages_not_released_while_queue_has_items(self):
-        _main.audio_to_play_queue.append("/nonexistent/file.wav")
+        ready = asyncio.Event()
+        ready.set()
+        _main.audio_to_play_queue.append(("/nonexistent/file.wav", ready))
         _main.can_release_accept_packages = False
         _main.discord_bot_instance.play_audio = AsyncMock(return_value=False)
 
@@ -214,11 +216,12 @@ class TestDequeQueue:
         assert isinstance(_main.audio_to_play_queue, deque)
 
     def test_popleft_removes_first_element(self):
+        e = asyncio.Event()
         _main.audio_to_play_queue.clear()
-        _main.audio_to_play_queue.append("a.wav")
-        _main.audio_to_play_queue.append("b.wav")
+        _main.audio_to_play_queue.append(("a.wav", e))
+        _main.audio_to_play_queue.append(("b.wav", e))
         _main.audio_to_play_queue.popleft()
-        assert list(_main.audio_to_play_queue) == ["b.wav"]
+        assert [p for p, _ in _main.audio_to_play_queue] == ["b.wav"]
         _main.audio_to_play_queue.clear()
 
 

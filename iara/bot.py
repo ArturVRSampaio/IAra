@@ -43,18 +43,14 @@ class DiscordBot(commands.Cog):
             return False
 
         audio_source = discord.FFmpegPCMAudio(audio_file, executable="ffmpeg")
+        loop = asyncio.get_running_loop()
         playback_done = asyncio.Event()
 
         waveform, sample_rate = torchaudio.load(audio_file)
 
-        asyncio.create_task(
-            asyncio.to_thread(
-                self.voice_client.play,
-                source=audio_source,
-                bitrate=32,
-                signal_type="voice",
-                application="lowdelay",
-                after=lambda e: playback_done.set())
+        self.voice_client.play(
+            audio_source,
+            after=lambda e: loop.call_soon_threadsafe(playback_done.set)
         )
         mouth_task = asyncio.create_task(self.vts.sync_mouth(waveform, sample_rate))
 
@@ -126,6 +122,13 @@ async def ask_llm_and_process(transcript: str) -> None:
     buffer = ""
     sentence_end = re.compile(r"[.!?]")
 
+    def enqueue_synthesis(text: str) -> None:
+        tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_file.close()
+        ready = asyncio.Event()
+        audio_to_play_queue.append((tmp_file.name, ready))
+        asyncio.create_task(synthesize_and_signal(text, tmp_file.name, ready))
+
     with llm.getChatSession():
         for token in llm.ask(transcript):
             full_response += token
@@ -137,24 +140,28 @@ async def ask_llm_and_process(transcript: str) -> None:
                 and len(buffer.strip().split()) >= 3
                 and buffer.strip()[-1] in ".!?"
             ):
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-                    await tts.generate_tts_file(buffer.strip(), tmp_file.name)
-                    audio_to_play_queue.append(tmp_file.name)
+                enqueue_synthesis(buffer.strip())
                 buffer = ""
 
         if buffer.strip():
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-                await tts.generate_tts_file(buffer.strip(), tmp_file.name)
-                audio_to_play_queue.append(tmp_file.name)
-                print(f"Added to queue (final buffer): {tmp_file.name}")
+            enqueue_synthesis(buffer.strip())
 
-    print(full_response)
+    print()
     asyncio.create_task(discord_bot_instance.context.send(
         f"===============================================\n"
         f"**Full Response**:\n**IAra says:** {full_response}\n"
         f"==============================================="
     ))
     can_release_accept_packages = True
+
+
+async def synthesize_and_signal(text: str, path: str, ready: asyncio.Event) -> None:
+    try:
+        await tts.generate_tts_file(text, path)
+    except Exception as e:
+        print(f"TTS synthesis failed: {e}")
+    finally:
+        ready.set()
 
 
 async def transcribe_for_user(user):
@@ -197,7 +204,18 @@ async def voice_consumer():
 
 async def play_audio_queue():
     while len(audio_to_play_queue) > 0:
-        audio_file = audio_to_play_queue[0]
+        audio_file, ready = audio_to_play_queue[0]
+        await ready.wait()
+
+        if not os.path.exists(audio_file) or os.path.getsize(audio_file) == 0:
+            print(f"Skipping empty/failed audio file: {audio_file}")
+            try:
+                os.remove(audio_file)
+            except Exception:
+                pass
+            audio_to_play_queue.popleft()
+            continue
+
         success = await discord_bot_instance.play_audio(audio_file)
 
         if success:
