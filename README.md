@@ -99,6 +99,30 @@ pip install --force-reinstall git+https://github.com/imayhaveborkedit/discord-ex
 
 Verifique se o pacote `davey` foi instalado como dependência do `discord-ext-voice-recv`. Se não aparecer, a versão instalada ainda não tem suporte a DAVE.
 
+### Bot não recebe áudio — `OpusError: corrupted stream`
+
+**Sintoma:** O bot conecta ao canal mas nunca transcreve nada. O log mostra `OpusError: corrupted stream` no `PacketRouter`.
+
+**Causa:** `discord-ext-voice-recv 0.5.3a180` implementa o handshake DAVE para conectar, mas **não aplica a decriptação DAVE no áudio recebido**. Após a decriptação de transporte (XChaCha20), o payload ainda está criptografado pela camada E2EE do DAVE. O decoder Opus recebe dados criptografados e falha.
+
+**Solução (patch manual na biblioteca):** Edite `.venv/Lib/site-packages/discord/ext/voice_recv/reader.py`, função `callback`, após a linha `packet.decrypted_data = self.decryptor.decrypt_rtp(packet)`:
+
+```python
+# Apply DAVE (end-to-end) decryption layer if active
+dave_session = getattr(getattr(self.voice_client, '_connection', None), 'dave_session', None)
+if dave_session and dave_session.ready:
+    import davey
+    user_id = self.voice_client._ssrc_to_id.get(rtp_packet.ssrc)
+    if user_id is not None:
+        try:
+            packet.decrypted_data = dave_session.decrypt(user_id, davey.MediaType.audio, packet.decrypted_data)
+        except Exception as e:
+            log.debug("DAVE decryption failed for ssrc %s: %s", rtp_packet.ssrc, e)
+            return
+```
+
+> Este patch precisa ser reaplicado sempre que o ambiente virtual for recriado, até que o `discord-ext-voice-recv` corrija o problema oficialmente.
+
 ---
 
 ## Estrutura do Projeto
