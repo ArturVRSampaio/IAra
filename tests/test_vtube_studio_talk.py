@@ -152,6 +152,21 @@ class TestSyncMouth:
 
 
 class TestExecuteAnimation:
+    def test_connects_if_not_connected(self):
+        vts_talk, vts_instance = _make_vts()
+        vts_talk.is_connected = False
+        vts_instance.request.return_value = {
+            "data": {"availableHotkeys": []}
+        }
+
+        async def run():
+            with patch.object(vts_talk, "connect", new_callable=AsyncMock) as mock_connect:
+                mock_connect.side_effect = lambda: setattr(vts_talk, "is_connected", True) or None
+                await vts_talk.execute_animation("Wave")
+                mock_connect.assert_called_once()
+
+        asyncio.run(run())
+
     def test_triggers_hotkey_when_present(self):
         vts_talk, vts_instance = _make_vts()
         vts_talk.is_connected = True
@@ -175,6 +190,18 @@ class TestExecuteAnimation:
 
 
 class TestChangeExpression:
+    def test_connects_if_not_connected(self):
+        vts_talk, vts_instance = _make_vts()
+        vts_talk.is_connected = False
+
+        async def run():
+            with patch.object(vts_talk, "connect", new_callable=AsyncMock) as mock_connect:
+                mock_connect.side_effect = lambda: setattr(vts_talk, "is_connected", True) or None
+                await vts_talk.change_expression()
+                mock_connect.assert_called_once()
+
+        asyncio.run(run())
+
     def test_sends_mouth_open_request(self):
         vts_talk, vts_instance = _make_vts()
         vts_talk.is_connected = True
