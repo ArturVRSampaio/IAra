@@ -1,9 +1,9 @@
 """
 Tests for iara/bot.py.
 
-iara.bot instantiates STT, LLMAgent, SpeechSynthesizer at module level and defines
-several async functions inside a `with llm.getChatSession():` block. All heavy
-dependencies are mocked via conftest.py before this module is imported.
+iara.bot instantiates STT, LLMAgent, SpeechSynthesizer at module level and creates
+a module-level AudioPipeline. All heavy dependencies are mocked via conftest.py
+before this module is imported.
 """
 import asyncio
 import os
@@ -28,21 +28,24 @@ def _import_bot():
 _main = _import_bot()
 
 
-class TestDiscordBotPlayAudio:
-    def _bot(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
-        instance.voice_client = MagicMock()
-        instance.voice_client.is_connected.return_value = True
-        return instance
+def _make_discord_bot():
+    """Create a fresh DiscordBot + AudioPipeline pair for isolation."""
+    pipeline = _main.AudioPipeline(_main.stt, _main.llm, _main.tts)
+    bot_mock = MagicMock()
+    instance = _main.DiscordBot(bot_mock, pipeline)
+    instance.voice_client = MagicMock()
+    instance.voice_client.is_connected.return_value = True
+    return instance, pipeline
 
+
+class TestDiscordBotPlayAudio:
     def test_missing_file_returns_false(self):
-        bot = self._bot()
+        bot, _ = _make_discord_bot()
         result = asyncio.run(bot.play_audio("/nonexistent/path/audio.wav"))
         assert result is False
 
     def test_existing_file_returns_true(self):
-        bot = self._bot()
+        bot, _ = _make_discord_bot()
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             f.write(b"\x00" * 44)
@@ -67,47 +70,42 @@ class TestDiscordBotPlayAudio:
 
 class TestDiscordBotPing:
     def test_ping_sends_message(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
+        bot, _ = _make_discord_bot()
         ctx = AsyncMock()
-        asyncio.run(instance.ping(ctx))
+        asyncio.run(bot.ping(ctx))
         ctx.send.assert_called_once_with("Bot connected to voice channel!")
 
 
 class TestDiscordBotTestCommand:
     def test_connects_to_voice_channel(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
+        bot, _ = _make_discord_bot()
         ctx = AsyncMock()
         ctx.author.voice.channel.connect = AsyncMock(return_value=MagicMock())
 
-        asyncio.run(instance.test(ctx))
+        asyncio.run(bot.test(ctx))
 
         ctx.author.voice.channel.connect.assert_called_once()
 
     def test_sets_context(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
+        bot, _ = _make_discord_bot()
         ctx = AsyncMock()
         ctx.author.voice.channel.connect = AsyncMock(return_value=MagicMock())
 
-        asyncio.run(instance.test(ctx))
+        asyncio.run(bot.test(ctx))
 
-        assert instance.context is ctx
+        assert bot.context is ctx
 
     def test_sends_connected_message(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
+        bot, _ = _make_discord_bot()
         ctx = AsyncMock()
         ctx.author.voice.channel.connect = AsyncMock(return_value=MagicMock())
 
-        asyncio.run(instance.test(ctx))
+        asyncio.run(bot.test(ctx))
 
         ctx.send.assert_called_once_with("Bot connected to voice channel!")
 
     def test_callback_appends_pcm_to_queue(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
+        bot, pipeline = _make_discord_bot()
         ctx = AsyncMock()
         captured_callback = {}
 
@@ -118,21 +116,19 @@ class TestDiscordBotTestCommand:
         vc_mock = MagicMock()
         ctx.author.voice.channel.connect = AsyncMock(return_value=vc_mock)
 
-        _main.user_voice_to_process_queue.clear()
+        pipeline.user_voice_to_process_queue.clear()
         with patch.object(_main.voice_recv, "BasicSink", side_effect=fake_basic_sink):
-            asyncio.run(instance.test(ctx))
+            asyncio.run(bot.test(ctx))
 
         data_mock = MagicMock()
         data_mock.pcm = b"\x01" * 100
         captured_callback["fn"]("user1", data_mock)
 
-        assert "user1" in _main.user_voice_to_process_queue
-        assert b"\x01" * 100 in _main.user_voice_to_process_queue["user1"]
-        _main.user_voice_to_process_queue.clear()
+        assert "user1" in pipeline.user_voice_to_process_queue
+        assert b"\x01" * 100 in pipeline.user_voice_to_process_queue["user1"]
 
     def test_callback_updates_last_audio_time(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
+        bot, pipeline = _make_discord_bot()
         ctx = AsyncMock()
         captured_callback = {}
 
@@ -144,30 +140,26 @@ class TestDiscordBotTestCommand:
         ctx.author.voice.channel.connect = AsyncMock(return_value=vc_mock)
 
         with patch.object(_main.voice_recv, "BasicSink", side_effect=fake_basic_sink):
-            asyncio.run(instance.test(ctx))
+            asyncio.run(bot.test(ctx))
 
         data_mock = MagicMock()
         data_mock.pcm = b"\x00" * 100
         captured_callback["fn"]("user1", data_mock)
 
-        assert instance.last_audio_time is not None
-        _main.user_voice_to_process_queue.clear()
+        assert bot.last_audio_time is not None
 
 
 class TestDiscordBotKickstart:
     def _bot(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
-        instance.voice_client = MagicMock()
-        instance.voice_client.is_connected.return_value = True
+        bot, pipeline = _make_discord_bot()
         ctx = AsyncMock()
         ctx.author.voice.channel.name = "general"
         ctx.author.voice.channel.connect = AsyncMock(return_value=MagicMock())
-        instance.context = ctx
-        return instance
+        bot.context = ctx
+        return bot, pipeline
 
     def test_disconnects_before_reconnecting(self):
-        bot = self._bot()
+        bot, _ = self._bot()
         original_vc = bot.voice_client
         original_vc.disconnect = AsyncMock()
 
@@ -176,7 +168,7 @@ class TestDiscordBotKickstart:
         original_vc.disconnect.assert_called_once_with(force=False)
 
     def test_returns_true_on_success(self):
-        bot = self._bot()
+        bot, _ = self._bot()
         bot.voice_client.disconnect = AsyncMock()
 
         result = asyncio.run(bot.kickstart(bot.context))
@@ -184,7 +176,7 @@ class TestDiscordBotKickstart:
         assert result is True
 
     def test_sends_reconnected_message(self):
-        bot = self._bot()
+        bot, _ = self._bot()
         bot.voice_client.disconnect = AsyncMock()
 
         asyncio.run(bot.kickstart(bot.context))
@@ -194,7 +186,7 @@ class TestDiscordBotKickstart:
         assert "reconnected" in args[0].lower()
 
     def test_returns_false_when_no_voice_channel(self):
-        bot = self._bot()
+        bot, _ = self._bot()
         bot.voice_client.disconnect = AsyncMock()
         bot.context.author.voice = None
 
@@ -203,7 +195,7 @@ class TestDiscordBotKickstart:
         assert result is False
 
     def test_returns_false_on_exception(self):
-        bot = self._bot()
+        bot, _ = self._bot()
         bot.voice_client.disconnect = AsyncMock(side_effect=Exception("boom"))
 
         result = asyncio.run(bot.kickstart(bot.context))
@@ -211,7 +203,7 @@ class TestDiscordBotKickstart:
         assert result is False
 
     def test_sends_error_message_on_exception(self):
-        bot = self._bot()
+        bot, _ = self._bot()
         bot.voice_client.disconnect = AsyncMock(side_effect=Exception("boom"))
 
         asyncio.run(bot.kickstart(bot.context))
@@ -221,7 +213,7 @@ class TestDiscordBotKickstart:
         assert "failed" in args[0].lower()
 
     def test_kickstart_callback_appends_pcm_to_queue(self):
-        bot = self._bot()
+        bot, pipeline = self._bot()
         bot.voice_client.disconnect = AsyncMock()
         captured_callback = {}
 
@@ -229,7 +221,7 @@ class TestDiscordBotKickstart:
             captured_callback["fn"] = cb
             return MagicMock()
 
-        _main.user_voice_to_process_queue.clear()
+        pipeline.user_voice_to_process_queue.clear()
         with patch.object(_main.voice_recv, "BasicSink", side_effect=fake_basic_sink):
             asyncio.run(bot.kickstart(bot.context))
 
@@ -237,12 +229,11 @@ class TestDiscordBotKickstart:
         data_mock.pcm = b"\x02" * 100
         captured_callback["fn"]("user1", data_mock)
 
-        assert "user1" in _main.user_voice_to_process_queue
-        assert b"\x02" * 100 in _main.user_voice_to_process_queue["user1"]
-        _main.user_voice_to_process_queue.clear()
+        assert "user1" in pipeline.user_voice_to_process_queue
+        assert b"\x02" * 100 in pipeline.user_voice_to_process_queue["user1"]
 
     def test_kickstart_callback_updates_last_audio_time(self):
-        bot = self._bot()
+        bot, pipeline = self._bot()
         bot.voice_client.disconnect = AsyncMock()
         captured_callback = {}
 
@@ -258,46 +249,45 @@ class TestDiscordBotKickstart:
         captured_callback["fn"]("user1", data_mock)
 
         assert bot.last_audio_time is not None
-        _main.user_voice_to_process_queue.clear()
 
 
 class TestTranscribeForUser:
+    def setup_method(self):
+        _main.pipeline.user_voice_to_process_queue.clear()
+
     def test_empty_queue_returns_empty_string(self):
-        _main.user_voice_to_process_queue.clear()
-        result = asyncio.run(_main.transcribe_for_user("user1"))
+        result = asyncio.run(_main.pipeline.transcribe_for_user("user1"))
         assert result == ""
 
     def test_returns_formatted_transcript(self):
         user = MagicMock()
         user.__str__ = lambda s: "TestUser"
-        _main.user_voice_to_process_queue[user] = [b"\x00" * 100]
+        _main.pipeline.user_voice_to_process_queue[user] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="olá mundo")
 
-        result = asyncio.run(_main.transcribe_for_user(user))
+        result = asyncio.run(_main.pipeline.transcribe_for_user(user))
         assert "olá mundo" in result
         assert "says:" in result
 
-        _main.user_voice_to_process_queue.pop(user, None)
+        _main.pipeline.user_voice_to_process_queue.pop(user, None)
 
     def test_empty_transcript_returns_empty_string(self):
         user = MagicMock()
-        _main.user_voice_to_process_queue[user] = [b"\x00" * 100]
+        _main.pipeline.user_voice_to_process_queue[user] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="")
 
-        result = asyncio.run(_main.transcribe_for_user(user))
+        result = asyncio.run(_main.pipeline.transcribe_for_user(user))
         assert result == ""
 
-        _main.user_voice_to_process_queue.pop(user, None)
+        _main.pipeline.user_voice_to_process_queue.pop(user, None)
 
 
 class TestAskLLMAndProcess:
     def setup_method(self):
-        _main.audio_to_play_queue.clear()
-        _main.can_release_accept_packages = False
-
-        ctx_mock = AsyncMock()
-        _main.discord_bot_instance = MagicMock()
-        _main.discord_bot_instance.context = ctx_mock
+        _main.pipeline.audio_to_play_queue.clear()
+        _main.pipeline.can_release_accept_packages = False
+        _main.pipeline.bot = MagicMock()
+        _main.pipeline.bot.context = AsyncMock()
 
     def test_adds_audio_to_queue(self):
         _main.llm.ask = MagicMock(return_value=iter(["Olá, tudo bem?"]))
@@ -308,35 +298,34 @@ class TestAskLLMAndProcess:
 
         _main.tts.generate_tts_file = fake_tts
 
-        asyncio.run(_main.ask_llm_and_process("user says: oi"))
-        assert len(_main.audio_to_play_queue) >= 1
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert len(_main.pipeline.audio_to_play_queue) >= 1
 
-        for path, _ in list(_main.audio_to_play_queue):
+        for path, _ in list(_main.pipeline.audio_to_play_queue):
             try:
                 os.unlink(path)
             except Exception:
                 pass
-        _main.audio_to_play_queue.clear()
+        _main.pipeline.audio_to_play_queue.clear()
 
     def test_sets_can_release_accept_packages_true(self):
         _main.llm.ask = MagicMock(return_value=iter([]))
         _main.tts.generate_tts_file = AsyncMock()
 
-        asyncio.run(_main.ask_llm_and_process("user says: oi"))
-        assert _main.can_release_accept_packages is True
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert _main.pipeline.can_release_accept_packages is True
 
 
 class TestVoiceConsumer:
     def setup_method(self):
-        _main.user_voice_to_process_queue.clear()
-        _main.accept_packages = True
-        _main.can_release_accept_packages = True
+        _main.pipeline.user_voice_to_process_queue.clear()
+        _main.pipeline.accept_packages = True
+        _main.pipeline.can_release_accept_packages = True
+        _main.pipeline.bot = None
 
     def test_does_nothing_when_no_bot_instance(self):
-        _main.discord_bot_instance = None
-
         async def run_one_tick():
-            task = asyncio.create_task(_main.voice_consumer())
+            task = asyncio.create_task(_main.pipeline.voice_consumer())
             await asyncio.sleep(0.15)
             task.cancel()
             try:
@@ -345,15 +334,15 @@ class TestVoiceConsumer:
                 pass
 
         asyncio.run(run_one_tick())
-        assert _main.accept_packages is True
+        assert _main.pipeline.accept_packages is True
 
     def test_does_nothing_when_queue_empty(self):
         bot_mock = MagicMock()
         bot_mock.last_audio_time = None
-        _main.discord_bot_instance = bot_mock
+        _main.pipeline.bot = bot_mock
 
         async def run_one_tick():
-            task = asyncio.create_task(_main.voice_consumer())
+            task = asyncio.create_task(_main.pipeline.voice_consumer())
             await asyncio.sleep(0.15)
             task.cancel()
             try:
@@ -362,7 +351,7 @@ class TestVoiceConsumer:
                 pass
 
         asyncio.run(run_one_tick())
-        assert _main.accept_packages is True
+        assert _main.pipeline.accept_packages is True
 
     def test_fires_when_silence_timeout_elapsed(self):
         from datetime import datetime, timedelta
@@ -370,13 +359,13 @@ class TestVoiceConsumer:
         bot_mock = MagicMock()
         bot_mock.last_audio_time = datetime.now() - timedelta(seconds=2)
         bot_mock.context = AsyncMock()
-        _main.discord_bot_instance = bot_mock
-        _main.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
+        _main.pipeline.bot = bot_mock
+        _main.pipeline.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="")
         _main.tts.generate_tts_file = AsyncMock()
 
         async def run_one_tick():
-            task = asyncio.create_task(_main.voice_consumer())
+            task = asyncio.create_task(_main.pipeline.voice_consumer())
             await asyncio.sleep(0.15)
             task.cancel()
             try:
@@ -385,7 +374,7 @@ class TestVoiceConsumer:
                 pass
 
         asyncio.run(run_one_tick())
-        assert _main.accept_packages is False
+        assert _main.pipeline.accept_packages is False
 
     def test_clears_voice_queue_after_processing(self):
         from datetime import datetime, timedelta
@@ -393,13 +382,13 @@ class TestVoiceConsumer:
         bot_mock = MagicMock()
         bot_mock.last_audio_time = datetime.now() - timedelta(seconds=2)
         bot_mock.context = AsyncMock()
-        _main.discord_bot_instance = bot_mock
-        _main.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
+        _main.pipeline.bot = bot_mock
+        _main.pipeline.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="")
         _main.tts.generate_tts_file = AsyncMock()
 
         async def run_one_tick():
-            task = asyncio.create_task(_main.voice_consumer())
+            task = asyncio.create_task(_main.pipeline.voice_consumer())
             await asyncio.sleep(0.15)
             task.cancel()
             try:
@@ -408,7 +397,7 @@ class TestVoiceConsumer:
                 pass
 
         asyncio.run(run_one_tick())
-        assert len(_main.user_voice_to_process_queue) == 0
+        assert len(_main.pipeline.user_voice_to_process_queue) == 0
 
     def test_releases_accept_packages_when_all_transcripts_empty(self):
         from datetime import datetime, timedelta
@@ -416,13 +405,13 @@ class TestVoiceConsumer:
         bot_mock = MagicMock()
         bot_mock.last_audio_time = datetime.now() - timedelta(seconds=2)
         bot_mock.context = AsyncMock()
-        _main.discord_bot_instance = bot_mock
-        _main.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
+        _main.pipeline.bot = bot_mock
+        _main.pipeline.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="")
-        _main.can_release_accept_packages = False
+        _main.pipeline.can_release_accept_packages = False
 
         async def run_one_tick():
-            task = asyncio.create_task(_main.voice_consumer())
+            task = asyncio.create_task(_main.pipeline.voice_consumer())
             await asyncio.sleep(0.15)
             task.cancel()
             try:
@@ -431,7 +420,7 @@ class TestVoiceConsumer:
                 pass
 
         asyncio.run(run_one_tick())
-        assert _main.can_release_accept_packages is True
+        assert _main.pipeline.can_release_accept_packages is True
 
     def test_calls_ask_llm_when_transcript_non_empty(self):
         from datetime import datetime, timedelta
@@ -439,8 +428,8 @@ class TestVoiceConsumer:
         bot_mock = MagicMock()
         bot_mock.last_audio_time = datetime.now() - timedelta(seconds=2)
         bot_mock.context = AsyncMock()
-        _main.discord_bot_instance = bot_mock
-        _main.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
+        _main.pipeline.bot = bot_mock
+        _main.pipeline.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="olá")
         _main.tts.generate_tts_file = AsyncMock()
 
@@ -448,13 +437,13 @@ class TestVoiceConsumer:
 
         async def fake_ask_llm(transcript):
             llm_called_with.append(transcript)
-            _main.can_release_accept_packages = True
+            _main.pipeline.can_release_accept_packages = True
 
-        original = _main.ask_llm_and_process
-        _main.ask_llm_and_process = fake_ask_llm
+        original = _main.pipeline.ask_llm_and_process
+        _main.pipeline.ask_llm_and_process = fake_ask_llm
 
         async def run_one_tick():
-            task = asyncio.create_task(_main.voice_consumer())
+            task = asyncio.create_task(_main.pipeline.voice_consumer())
             await asyncio.sleep(0.15)
             task.cancel()
             try:
@@ -465,7 +454,7 @@ class TestVoiceConsumer:
         try:
             asyncio.run(run_one_tick())
         finally:
-            _main.ask_llm_and_process = original
+            _main.pipeline.ask_llm_and_process = original
 
         assert len(llm_called_with) == 1
         assert "olá" in llm_called_with[0]
@@ -473,14 +462,14 @@ class TestVoiceConsumer:
 
 class TestVoicePlayer:
     def setup_method(self):
-        _main.audio_to_play_queue.clear()
-        _main.accept_packages = False
-        _main.can_release_accept_packages = True
-        _main.discord_bot_instance = MagicMock()
+        _main.pipeline.audio_to_play_queue.clear()
+        _main.pipeline.accept_packages = False
+        _main.pipeline.can_release_accept_packages = True
+        _main.pipeline.bot = MagicMock()
 
     def test_releases_accept_packages_when_queue_empty(self):
         async def run_one_tick():
-            task = asyncio.create_task(_main.voice_player())
+            task = asyncio.create_task(_main.pipeline.voice_player())
             await asyncio.sleep(0.15)
             task.cancel()
             try:
@@ -489,17 +478,17 @@ class TestVoicePlayer:
                 pass
 
         asyncio.run(run_one_tick())
-        assert _main.accept_packages is True
+        assert _main.pipeline.accept_packages is True
 
     def test_accept_packages_not_released_while_queue_has_items(self):
         ready = asyncio.Event()
         ready.set()
-        _main.audio_to_play_queue.append(("/nonexistent/file.wav", ready))
-        _main.can_release_accept_packages = False
-        _main.discord_bot_instance.play_audio = AsyncMock(return_value=False)
+        _main.pipeline.audio_to_play_queue.append(("/nonexistent/file.wav", ready))
+        _main.pipeline.can_release_accept_packages = False
+        _main.pipeline.bot.play_audio = AsyncMock(return_value=False)
 
         async def run_one_tick():
-            task = asyncio.create_task(_main.voice_player())
+            task = asyncio.create_task(_main.pipeline.voice_player())
             await asyncio.sleep(0.15)
             task.cancel()
             try:
@@ -508,23 +497,23 @@ class TestVoicePlayer:
                 pass
 
         asyncio.run(run_one_tick())
-        assert _main.accept_packages is False
+        assert _main.pipeline.accept_packages is False
 
-        _main.audio_to_play_queue.clear()
+        _main.pipeline.audio_to_play_queue.clear()
 
 
 class TestDequeQueue:
     def test_audio_queue_is_deque(self):
-        assert isinstance(_main.audio_to_play_queue, deque)
+        assert isinstance(_main.pipeline.audio_to_play_queue, deque)
 
     def test_popleft_removes_first_element(self):
         e = asyncio.Event()
-        _main.audio_to_play_queue.clear()
-        _main.audio_to_play_queue.append(("a.wav", e))
-        _main.audio_to_play_queue.append(("b.wav", e))
-        _main.audio_to_play_queue.popleft()
-        assert [p for p, _ in _main.audio_to_play_queue] == ["b.wav"]
-        _main.audio_to_play_queue.clear()
+        _main.pipeline.audio_to_play_queue.clear()
+        _main.pipeline.audio_to_play_queue.append(("a.wav", e))
+        _main.pipeline.audio_to_play_queue.append(("b.wav", e))
+        _main.pipeline.audio_to_play_queue.popleft()
+        assert [p for p, _ in _main.pipeline.audio_to_play_queue] == ["b.wav"]
+        _main.pipeline.audio_to_play_queue.clear()
 
 
 class TestSynthesizeAndSignal:
@@ -533,7 +522,7 @@ class TestSynthesizeAndSignal:
 
         async def run():
             ready = asyncio.Event()
-            await _main.synthesize_and_signal("texto", "/tmp/out.wav", ready)
+            await _main.pipeline.synthesize_and_signal("texto", "/tmp/out.wav", ready)
             return ready.is_set()
 
         assert asyncio.run(run()) is True
@@ -543,7 +532,7 @@ class TestSynthesizeAndSignal:
 
         async def run():
             ready = asyncio.Event()
-            await _main.synthesize_and_signal("texto", "/tmp/out.wav", ready)
+            await _main.pipeline.synthesize_and_signal("texto", "/tmp/out.wav", ready)
             return ready.is_set()
 
         assert asyncio.run(run()) is True
@@ -553,7 +542,7 @@ class TestSynthesizeAndSignal:
 
         async def run():
             ready = asyncio.Event()
-            await _main.synthesize_and_signal("olá mundo", "/tmp/abc.wav", ready)
+            await _main.pipeline.synthesize_and_signal("olá mundo", "/tmp/abc.wav", ready)
 
         asyncio.run(run())
         _main.tts.generate_tts_file.assert_called_once_with("olá mundo", "/tmp/abc.wav")
@@ -561,16 +550,16 @@ class TestSynthesizeAndSignal:
 
 class TestPlayAudioQueue:
     def setup_method(self):
-        _main.audio_to_play_queue.clear()
-        _main.discord_bot_instance = MagicMock()
+        _main.pipeline.audio_to_play_queue.clear()
+        _main.pipeline.bot = MagicMock()
 
     def test_waits_for_ready_event(self):
         async def run():
             ready = asyncio.Event()
-            _main.audio_to_play_queue.append(("/nonexistent.wav", ready))
-            _main.discord_bot_instance.play_audio = AsyncMock(return_value=False)
+            _main.pipeline.audio_to_play_queue.append(("/nonexistent.wav", ready))
+            _main.pipeline.bot.play_audio = AsyncMock(return_value=False)
 
-            task = asyncio.create_task(_main.play_audio_queue())
+            task = asyncio.create_task(_main.pipeline.play_audio_queue())
             await asyncio.sleep(0.05)
             assert not task.done()
             ready.set()
@@ -586,11 +575,11 @@ class TestPlayAudioQueue:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 empty_path = f.name
 
-            _main.audio_to_play_queue.append((empty_path, ready))
-            _main.discord_bot_instance.play_audio = AsyncMock(return_value=True)
+            _main.pipeline.audio_to_play_queue.append((empty_path, ready))
+            _main.pipeline.bot.play_audio = AsyncMock(return_value=True)
 
-            await _main.play_audio_queue()
-            assert len(_main.audio_to_play_queue) == 0
+            await _main.pipeline.play_audio_queue()
+            assert len(_main.pipeline.audio_to_play_queue) == 0
             assert not os.path.exists(empty_path)
 
         asyncio.run(run())
@@ -603,10 +592,10 @@ class TestPlayAudioQueue:
 
             ready = asyncio.Event()
             ready.set()
-            _main.audio_to_play_queue.append((path, ready))
-            _main.discord_bot_instance.play_audio = AsyncMock(return_value=True)
+            _main.pipeline.audio_to_play_queue.append((path, ready))
+            _main.pipeline.bot.play_audio = AsyncMock(return_value=True)
 
-            await _main.play_audio_queue()
+            await _main.pipeline.play_audio_queue()
             assert not os.path.exists(path)
 
         asyncio.run(run())
@@ -619,13 +608,13 @@ class TestPlayAudioQueue:
 
             ready = asyncio.Event()
             ready.set()
-            _main.audio_to_play_queue.append((path, ready))
-            _main.discord_bot_instance.play_audio = AsyncMock(return_value=True)
+            _main.pipeline.audio_to_play_queue.append((path, ready))
+            _main.pipeline.bot.play_audio = AsyncMock(return_value=True)
 
             with patch("os.remove", side_effect=OSError("locked")):
-                await _main.play_audio_queue()
+                await _main.pipeline.play_audio_queue()
 
-            assert len(_main.audio_to_play_queue) == 0
+            assert len(_main.pipeline.audio_to_play_queue) == 0
             try:
                 os.unlink(path)
             except Exception:
@@ -647,12 +636,12 @@ class TestPlayAudioQueue:
                 f.write(b"\x00" * 44)
                 path2 = f.name
 
-            _main.audio_to_play_queue.append((path1, ready1))
-            _main.audio_to_play_queue.append((path2, ready2))
-            _main.discord_bot_instance.play_audio = AsyncMock(return_value=False)
+            _main.pipeline.audio_to_play_queue.append((path1, ready1))
+            _main.pipeline.audio_to_play_queue.append((path2, ready2))
+            _main.pipeline.bot.play_audio = AsyncMock(return_value=False)
 
-            await _main.play_audio_queue()
-            assert len(_main.audio_to_play_queue) == 2
+            await _main.pipeline.play_audio_queue()
+            assert len(_main.pipeline.audio_to_play_queue) == 2
 
             try:
                 os.unlink(path1)
@@ -665,9 +654,7 @@ class TestPlayAudioQueue:
 
 class TestPlayAudioThreadSafety:
     def test_play_uses_call_soon_threadsafe(self):
-        bot_mock = MagicMock()
-        instance = _main.DiscordBot(bot_mock)
-        instance.voice_client = MagicMock()
+        bot, _ = _make_discord_bot()
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             f.write(b"\x00" * 44)
@@ -680,17 +667,17 @@ class TestPlayAudioThreadSafety:
                 captured["after"] = kwargs.get("after")
                 captured["kwargs"] = kwargs
 
-            instance.voice_client.play = MagicMock(side_effect=fake_play)
+            bot.voice_client.play = MagicMock(side_effect=fake_play)
             sys.modules["torchaudio"].load.return_value = (MagicMock(), 48000)
 
             async def run():
-                task = asyncio.create_task(instance.play_audio(tmp_path))
+                task = asyncio.create_task(bot.play_audio(tmp_path))
                 await asyncio.sleep(0.05)
                 if "after" in captured and captured["after"]:
                     captured["after"](None)
                 await task
 
-            with patch.object(instance.vts, "sync_mouth", new_callable=AsyncMock):
+            with patch.object(bot.vts, "sync_mouth", new_callable=AsyncMock):
                 asyncio.run(run())
 
             assert "after" in captured
@@ -702,10 +689,10 @@ class TestPlayAudioThreadSafety:
 
 class TestAskLLMSentenceSplitting:
     def setup_method(self):
-        _main.audio_to_play_queue.clear()
-        _main.can_release_accept_packages = False
-        _main.discord_bot_instance = MagicMock()
-        _main.discord_bot_instance.context = AsyncMock()
+        _main.pipeline.audio_to_play_queue.clear()
+        _main.pipeline.can_release_accept_packages = False
+        _main.pipeline.bot = MagicMock()
+        _main.pipeline.bot.context = AsyncMock()
 
     def test_multiple_sentences_enqueue_multiple_files(self):
         _main.llm.ask = MagicMock(return_value=iter([
@@ -713,17 +700,17 @@ class TestAskLLMSentenceSplitting:
         ]))
         _main.tts.generate_tts_file = AsyncMock()
 
-        asyncio.run(_main.ask_llm_and_process("user says: oi"))
-        assert len(_main.audio_to_play_queue) >= 1
-        _main.audio_to_play_queue.clear()
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert len(_main.pipeline.audio_to_play_queue) >= 1
+        _main.pipeline.audio_to_play_queue.clear()
 
     def test_final_buffer_is_flushed(self):
         _main.llm.ask = MagicMock(return_value=iter(["Olá mundo"]))
         _main.tts.generate_tts_file = AsyncMock()
 
-        asyncio.run(_main.ask_llm_and_process("user says: oi"))
-        assert len(_main.audio_to_play_queue) == 1
-        _main.audio_to_play_queue.clear()
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert len(_main.pipeline.audio_to_play_queue) == 1
+        _main.pipeline.audio_to_play_queue.clear()
 
 
 class TestSentenceDetection:
