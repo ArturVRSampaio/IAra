@@ -13,7 +13,7 @@ Canal de Voz (Discord)
     ↓ PCM chunks por usuário
 STT — Whisper Turbo (faster-whisper, PT-BR)
     ↓ transcrição de texto
-LLM — Meta-Llama-3-8B-Instruct via GPT4All (local, CUDA)
+LLM — Llama-3.2-3B-Instruct via GPT4All (local, CUDA)
     ↓ resposta em streaming, frase a frase
 TTS — Kokoro (pf_dora, PT-BR, local, CUDA)
     ↓ arquivos .wav em paralelo com o playback
@@ -25,7 +25,7 @@ Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 | Arquivo | Responsabilidade |
 |---|---|
 | `main.py` | Ponto de entrada — chama `iara.bot.main()` |
-| `iara/bot.py` | Orquestrador async, bot Discord, filas de voz e áudio |
+| `iara/bot.py` | `DiscordBot` (comandos e playback) + `AudioPipeline` (STT→LLM→TTS, filas, loops) |
 | `iara/stt.py` | Transcrição com faster-whisper, VAD, PT-BR |
 | `iara/llm.py` | Wrapper GPT4All, personalidade da Iara, streaming |
 | `iara/tts.py` | Síntese de voz com Kokoro (pf_dora, PT-BR), executor single-thread |
@@ -38,7 +38,7 @@ Playback no Discord + sincronização de boca no VTube Studio (pyvts)
 - CUDA (GPU NVIDIA recomendada)
 - [FFmpeg](https://ffmpeg.org/) no PATH
 - [VTube Studio](https://denchisoft.com/) com plugin API habilitado
-- Modelo `Meta-Llama-3-8B-Instruct.Q4_0.gguf` baixado via GPT4All
+- Modelo LLM baixado automaticamente via GPT4All (padrão: `Llama-3.2-3B-Instruct-Q4_0.gguf`, configurável via `GPT4ALL_MODEL_NAME`)
 - `kokoro` e `soundfile` (instalados via `requirements.txt`; o modelo Kokoro (~300MB) é baixado automaticamente na primeira execução)
 
 ### Discord API
@@ -66,8 +66,8 @@ Copie `.env.example` para `.env` e preencha os valores:
 ```env
 DISCORD_TOKEN=seu_token_aqui
 
-# Opcional — sobrescreve o modelo GPT4All
-GPT4ALL_MODEL_NAME=Meta-Llama-3-8B-Instruct.Q4_0.gguf
+# Opcional — sobrescreve o modelo GPT4All (baixado automaticamente)
+GPT4ALL_MODEL_NAME=Llama-3.2-3B-Instruct-Q4_0.gguf
 GPT4ALL_MODEL_PATH=~/AppData/Local/nomic.ai/GPT4All/
 ```
 
