@@ -4,113 +4,113 @@
 
 **I**nteligência **A**rtificial **R**aramente **A**curada
 
-IAra é uma VTuber interativa para Discord criada por [ArturVRSampaio](https://github.com/ArturVRSampaio). Ela ouve a voz dos usuários no canal, transcreve, gera respostas com um LLM local e fala de volta — com animação de boca sincronizada no VTube Studio.
+IAra is an interactive VTuber for Discord created by [ArturVRSampaio](https://github.com/ArturVRSampaio). She listens to users in a voice channel, transcribes their speech, generates responses with a local LLM, and talks back — with synchronized mouth animation in VTube Studio.
 
 ## Pipeline
 
 ```
-Canal de Voz (Discord)
-    ↓ PCM chunks por usuário
+Voice Channel (Discord)
+    ↓ PCM chunks per user
 STT — Whisper Turbo (faster-whisper, PT-BR)
-    ↓ transcrição de texto
+    ↓ transcribed text
 LLM — Llama-3.2-3B-Instruct via GPT4All (local, CUDA)
-    ↓ resposta em streaming, frase a frase
+    ↓ streaming response, sentence by sentence
 TTS — Kokoro (pf_dora, PT-BR, local, CUDA)
-    ↓ arquivos .wav em paralelo com o playback
-Playback no Discord + sincronização de boca no VTube Studio (pyvts)
+    ↓ .wav files synthesized in parallel with playback
+Playback on Discord + mouth sync in VTube Studio (pyvts)
 ```
 
-## Módulos
+## Modules
 
-| Arquivo | Responsabilidade |
+| File | Responsibility |
 |---|---|
-| `main.py` | Ponto de entrada — chama `iara.bot.main()` |
-| `iara/bot.py` | `DiscordBot` (comandos e playback) + `AudioPipeline` (STT→LLM→TTS, filas, loops) |
-| `iara/stt.py` | Transcrição com faster-whisper, VAD, PT-BR |
-| `iara/llm.py` | Wrapper GPT4All, personalidade da Iara, streaming |
-| `iara/tts.py` | Síntese de voz com Kokoro (pf_dora, PT-BR), executor single-thread |
-| `iara/vtube.py` | WebSocket com VTube Studio, sincronização da boca |
-| `iara/utils.py` | Utilitário de cores ANSI para o terminal |
+| `main.py` | Entry point — calls `iara.bot.main()` |
+| `iara/bot.py` | `DiscordBot` (commands and playback) + `AudioPipeline` (STT→LLM→TTS, queues, loops) |
+| `iara/stt.py` | Transcription with faster-whisper, VAD, PT-BR |
+| `iara/llm.py` | GPT4All wrapper, Iara's personality, streaming |
+| `iara/tts.py` | Speech synthesis with Kokoro (pf_dora, PT-BR), single-thread executor |
+| `iara/vtube.py` | WebSocket with VTube Studio, mouth synchronization |
+| `iara/utils.py` | ANSI color utility for the terminal |
 
-## Requisitos
+## Requirements
 
 - Python 3.10+
-- CUDA (GPU NVIDIA recomendada)
-- [FFmpeg](https://ffmpeg.org/) no PATH
-- [VTube Studio](https://denchisoft.com/) com plugin API habilitado
-- Modelo LLM baixado automaticamente via GPT4All (padrão: `Llama-3.2-3B-Instruct-Q4_0.gguf`, configurável via `GPT4ALL_MODEL_NAME`)
-- `kokoro` e `soundfile` (instalados via `requirements.txt`; o modelo Kokoro (~300MB) é baixado automaticamente na primeira execução)
+- CUDA (NVIDIA GPU recommended)
+- [FFmpeg](https://ffmpeg.org/) on PATH
+- [VTube Studio](https://denchisoft.com/) with plugin API enabled
+- LLM model downloaded automatically via GPT4All (default: `Llama-3.2-3B-Instruct-Q4_0.gguf`, configurable via `GPT4ALL_MODEL_NAME`)
+- `kokoro` and `soundfile` (installed via `requirements.txt`; the Kokoro model (~300MB) is downloaded automatically on first run)
 
 ### Discord API
 
-O bot utiliza **`discord.py==2.7.1`** e a extensão experimental **`discord-ext-voice-recv`**, que habilita o recebimento de áudio dos canais de voz. A extensão **não está no PyPI** e deve ser instalada diretamente do GitHub:
+The bot uses **`discord.py==2.7.1`** and the experimental **`discord-ext-voice-recv`** extension, which enables receiving audio from voice channels. The extension **is not on PyPI** and must be installed directly from GitHub:
 
 ```bash
 pip install discord.py==2.7.1
 pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 ```
 
-> `discord-ext-voice-recv` é necessária para capturar o PCM de cada usuário separadamente. O `discord.py` padrão não suporta recebimento de voz. A versão `2.7.1+` é necessária para suporte ao protocolo **DAVE** (Discord Audio Video Encryption), introduzido pelo Discord em 2024 — versões anteriores falham silenciosamente na conexão de voz.
+> `discord-ext-voice-recv` is required to capture PCM from each user separately. Standard `discord.py` does not support receiving voice. Version `2.7.1+` is required for **DAVE** (Discord Audio Video Encryption) protocol support, introduced by Discord in 2024 — older versions silently fail on voice connections.
 
-## Instalação
+## Installation
 
 ```bash
 pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 pip install -r requirements.txt
 ```
 
-> `kokoro` e `soundfile` estão incluídos no `requirements.txt`. O modelo de voz Kokoro (~300MB) será baixado automaticamente do HuggingFace na primeira execução.
+> `kokoro` and `soundfile` are included in `requirements.txt`. The Kokoro voice model (~300MB) will be downloaded automatically from HuggingFace on first run.
 
-Copie `.env.example` para `.env` e preencha os valores:
+Copy `.env.example` to `.env` and fill in the values:
 
 ```env
-DISCORD_TOKEN=seu_token_aqui
+DISCORD_TOKEN=your_token_here
 
-# Opcional — sobrescreve o modelo GPT4All (baixado automaticamente)
+# Optional — overrides the GPT4All model (downloaded automatically)
 GPT4ALL_MODEL_NAME=Llama-3.2-3B-Instruct-Q4_0.gguf
 GPT4ALL_MODEL_PATH=~/AppData/Local/nomic.ai/GPT4All/
 ```
 
-Na primeira execução, o VTube Studio pedirá autorização para o plugin **"Iara VTuber"**. O token será salvo em `token.txt`.
+On first run, VTube Studio will ask for authorization for the **"Iara VTuber"** plugin. The token will be saved to `token.txt`.
 
-## Uso
+## Usage
 
 ```bash
 python main.py
 ```
 
-Comandos disponíveis no Discord:
+Available Discord commands:
 
-| Comando | Descrição |
+| Command | Description |
 |---|---|
-| `!test` | Conecta o bot ao canal de voz do usuário |
-| `!kickstart` | Reconecta o bot ao canal de voz |
-| `!ping` | Verifica se o bot está online |
+| `!test` | Connects the bot to the user's voice channel |
+| `!kickstart` | Reconnects the bot to the voice channel |
+| `!ping` | Checks if the bot is online |
 
 ## Troubleshooting
 
-### Bot entra e sai do canal de voz em loop
+### Bot joins and leaves the voice channel in a loop
 
-**Sintoma:** O bot conecta ao canal de voz e desconecta imediatamente, repetindo em loop. Nenhuma mensagem de erro aparece no chat. O problema ocorre em qualquer rede ou máquina.
+**Symptom:** The bot connects to the voice channel and immediately disconnects, repeating in a loop. No error message appears in chat. The issue occurs on any network or machine.
 
-**Causa:** O Discord introduziu o protocolo **DAVE** (Discord Audio Video Encryption) em 2024 para criptografia ponta-a-ponta no áudio. Versões antigas do `discord-ext-voice-recv` (anteriores a `0.5.3a180`) e do `discord.py` (anteriores a `2.7.1`) não implementam o handshake DAVE, então a conexão UDP de voz nunca se estabelece, causando o loop.
+**Cause:** Discord introduced the **DAVE** (Discord Audio Video Encryption) protocol in 2024 for end-to-end audio encryption. Older versions of `discord-ext-voice-recv` (before `0.5.3a180`) and `discord.py` (before `2.7.1`) do not implement the DAVE handshake, so the UDP voice connection never establishes, causing the loop.
 
-**Solução:** Atualize as dependências:
+**Fix:** Update the dependencies:
 
 ```bash
 pip install "discord.py==2.7.1"
 pip install --force-reinstall git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 ```
 
-Verifique se o pacote `davey` foi instalado como dependência do `discord-ext-voice-recv`. Se não aparecer, a versão instalada ainda não tem suporte a DAVE.
+Verify that the `davey` package was installed as a dependency of `discord-ext-voice-recv`. If it doesn't appear, the installed version does not yet support DAVE.
 
-### Bot não recebe áudio — `OpusError: corrupted stream`
+### Bot doesn't receive audio — `OpusError: corrupted stream`
 
-**Sintoma:** O bot conecta ao canal mas nunca transcreve nada. O log mostra `OpusError: corrupted stream` no `PacketRouter`.
+**Symptom:** The bot connects to the channel but never transcribes anything. The log shows `OpusError: corrupted stream` in the `PacketRouter`.
 
-**Causa:** `discord-ext-voice-recv 0.5.3a180` implementa o handshake DAVE para conectar, mas **não aplica a decriptação DAVE no áudio recebido**. Após a decriptação de transporte (XChaCha20), o payload ainda está criptografado pela camada E2EE do DAVE. O decoder Opus recebe dados criptografados e falha.
+**Cause:** `discord-ext-voice-recv 0.5.3a180` implements the DAVE handshake to connect, but **does not apply DAVE decryption to received audio**. After transport decryption (XChaCha20), the payload is still encrypted by DAVE's E2EE layer. The Opus decoder receives encrypted data and fails.
 
-**Solução (patch manual na biblioteca):** Edite `.venv/Lib/site-packages/discord/ext/voice_recv/reader.py`, função `callback`, após a linha `packet.decrypted_data = self.decryptor.decrypt_rtp(packet)`:
+**Fix (manual library patch):** Edit `.venv/Lib/site-packages/discord/ext/voice_recv/reader.py`, function `callback`, after the line `packet.decrypted_data = self.decryptor.decrypt_rtp(packet)`:
 
 ```python
 # Apply DAVE (end-to-end) decryption layer if active
@@ -126,24 +126,24 @@ if dave_session and dave_session.ready:
             return
 ```
 
-> Este patch precisa ser reaplicado sempre que o ambiente virtual for recriado, até que o `discord-ext-voice-recv` corrija o problema oficialmente.
+> This patch must be reapplied every time the virtual environment is recreated, until `discord-ext-voice-recv` fixes the issue officially.
 
 ---
 
-## Estrutura do Projeto
+## Project Structure
 
 ```
 IAra/
-├── main.py            # ponto de entrada
-├── iara/              # pacote principal
+├── main.py            # entry point
+├── iara/              # main package
 │   ├── bot.py
 │   ├── stt.py
 │   ├── llm.py
 │   ├── tts.py
 │   ├── vtube.py
 │   └── utils.py
-├── tests/             # suite de testes (pytest)
-├── experiments/       # protótipos e testes por subsistema
+├── tests/             # pytest test suite
+├── experiments/       # per-subsystem prototypes and experiments
 ├── .env.example
 └── .env
 ```
