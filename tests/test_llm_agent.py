@@ -60,11 +60,45 @@ class TestLLMAgentInit:
         assert "Discord" in _mod._SYSTEM_PROMPT
 
 
+class TestBuildSystemPrompt:
+    def test_includes_base_prompt(self):
+        _, _, _mod = _make_llm()
+        prompt = _mod.build_system_prompt(5)
+        assert "Iara" in prompt
+
+    def test_includes_mood_value(self):
+        _, _, _mod = _make_llm()
+        prompt = _mod.build_system_prompt(7)
+        assert "7/10" in prompt
+
+    def test_includes_mood_label(self):
+        _, _, _mod = _make_llm()
+        assert "muito irritada" in _mod.build_system_prompt(1)
+        assert "aborrecida" in _mod.build_system_prompt(3)
+        assert "neutra" in _mod.build_system_prompt(5)
+        assert "feliz" in _mod.build_system_prompt(7)
+        assert "muito animada" in _mod.build_system_prompt(9)
+
+    def test_includes_token_instructions(self):
+        _, _, _mod = _make_llm()
+        prompt = _mod.build_system_prompt(5)
+        assert "[+]" in prompt
+        assert "[-]" in prompt
+        assert "[=]" in prompt
+
+
 class TestGetChatSession:
-    def test_calls_chat_session_with_system_prompt(self):
+    def test_calls_chat_session_with_built_prompt(self):
         llm, _, _mod = _make_llm()
-        llm.getChatSession()
-        llm.gpt4all.chat_session.assert_called_once_with(system_prompt=_mod._SYSTEM_PROMPT)
+        llm.getChatSession(mood=5)
+        _, kwargs = llm.gpt4all.chat_session.call_args
+        assert kwargs["system_prompt"] == _mod.build_system_prompt(5)
+
+    def test_mood_reflected_in_prompt(self):
+        llm, _, _mod = _make_llm()
+        llm.getChatSession(mood=2)
+        _, kwargs = llm.gpt4all.chat_session.call_args
+        assert "2/10" in kwargs["system_prompt"]
 
     def test_returns_context_manager(self):
         llm, _, _ = _make_llm()

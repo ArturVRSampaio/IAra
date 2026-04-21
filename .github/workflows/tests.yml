@@ -26,4 +26,4 @@ jobs:
           pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
 
       - name: Run tests
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests/ -q -m "not integration"

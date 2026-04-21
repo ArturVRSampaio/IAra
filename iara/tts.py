@@ -16,7 +16,11 @@ class SpeechSynthesizer:
         if not text.strip():
             return
 
+        text = re.sub(r'```[\s\S]*?```', '', text)            # strip code blocks
+        text = re.sub(r'`[^`]*`', '', text)                  # strip inline code
         text = re.sub(r'[\n\r]+', ' ', text)
+        text = re.sub(r'<\|[^|]*\|>', '', text)              # strip <|special_tokens|>
+        text = re.sub(r'\[(?:user|assistant|system)[^\]]*\]?.*', '', text)  # strip role markers
         text = re.sub(r'[\U00010000-\U0010FFFF]', '', text)  # strip emojis
         text = re.sub(r'[!.()?,;:]+', '', text)              # strip punctuation espeak chokes on
         text = text.strip()

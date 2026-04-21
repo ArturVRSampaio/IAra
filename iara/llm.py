@@ -22,6 +22,33 @@ _SYSTEM_PROMPT = (
     "    - De respostas breves e com frases curtas."
 )
 
+_MOOD_LABELS = [
+    (range(0, 3), "muito irritada"),
+    (range(3, 5), "aborrecida"),
+    (range(5, 6), "neutra"),
+    (range(6, 8), "feliz"),
+    (range(8, 11), "muito animada"),
+]
+
+
+def _mood_label(mood: int) -> str:
+    for r, label in _MOOD_LABELS:
+        if mood in r:
+            return label
+    return "neutra"
+
+
+def build_system_prompt(mood: int) -> str:
+    label = _mood_label(mood)
+    mood_section = (
+        "## Estado Emocional Atual:"
+        f"    Seu humor atual é {mood}/10 ({label})."
+        "    Adapte seu tom de acordo: quanto mais baixo o número, mais irritada e impaciente você está; quanto mais alto, mais animada e feliz."
+        "    Ao final de CADA resposta, adicione exatamente um destes tokens para indicar se seu humor mudou: [+] para melhor, [-] para pior, [=] para igual."
+        "    O token deve ser a última coisa na sua resposta, sem texto adicional depois dele."
+    )
+    return _SYSTEM_PROMPT + mood_section
+
 
 class LLMAgent:
     def __init__(self):
@@ -38,8 +65,8 @@ class LLMAgent:
             verbose=True
         )
 
-    def getChatSession(self):
-        return self.gpt4all.chat_session(system_prompt=_SYSTEM_PROMPT)
+    def getChatSession(self, mood: int = 5):
+        return self.gpt4all.chat_session(system_prompt=build_system_prompt(mood))
 
     def ask(self, messages):
         try:

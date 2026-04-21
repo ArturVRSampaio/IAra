@@ -713,6 +713,130 @@ class TestAskLLMSentenceSplitting:
         _main.pipeline.audio_to_play_queue.clear()
 
 
+class TestMood:
+    def setup_method(self):
+        _main.pipeline.mood = 5
+        _main.pipeline.audio_to_play_queue.clear()
+        _main.pipeline.can_release_accept_packages = False
+        _main.pipeline.bot = MagicMock()
+        _main.pipeline.bot.context = AsyncMock()
+
+    def test_plus_token_increments_mood(self):
+        _main.llm.ask = MagicMock(return_value=iter(["Olá [+]"]))
+        _main.tts.generate_tts_file = AsyncMock()
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert _main.pipeline.mood == 6
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_minus_token_decrements_mood(self):
+        _main.llm.ask = MagicMock(return_value=iter(["Que chato [-]"]))
+        _main.tts.generate_tts_file = AsyncMock()
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert _main.pipeline.mood == 4
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_equal_token_keeps_mood(self):
+        _main.llm.ask = MagicMock(return_value=iter(["Ok [=]"]))
+        _main.tts.generate_tts_file = AsyncMock()
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert _main.pipeline.mood == 5
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_missing_token_keeps_mood(self):
+        _main.llm.ask = MagicMock(return_value=iter(["Tudo bem"]))
+        _main.tts.generate_tts_file = AsyncMock()
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert _main.pipeline.mood == 5
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_mood_clamped_at_10(self):
+        _main.pipeline.mood = 10
+        _main.llm.ask = MagicMock(return_value=iter(["Ótimo [+]"]))
+        _main.tts.generate_tts_file = AsyncMock()
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert _main.pipeline.mood == 10
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_mood_clamped_at_0(self):
+        _main.pipeline.mood = 0
+        _main.llm.ask = MagicMock(return_value=iter(["Que raiva [-]"]))
+        _main.tts.generate_tts_file = AsyncMock()
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert _main.pipeline.mood == 0
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_mood_token_stripped_from_tts(self):
+        captured_texts = []
+
+        async def fake_tts(text, path):
+            captured_texts.append(text)
+
+        _main.llm.ask = MagicMock(return_value=iter(["Olá mundo [+]"]))
+        _main.tts.generate_tts_file = fake_tts
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert all("[+]" not in t and "[-]" not in t and "[=]" not in t for t in captured_texts)
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_special_tokens_stripped_from_tts(self):
+        captured_texts = []
+
+        async def fake_tts(text, path):
+            captured_texts.append(text)
+
+        _main.llm.ask = MagicMock(return_value=iter(["Olá <|eom_id|> mundo [=]"]))
+        _main.tts.generate_tts_file = fake_tts
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert all("<|eom_id|>" not in t for t in captured_texts)
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_bracket_annotations_stripped_from_tts(self):
+        captured_texts = []
+
+        async def fake_tts(text, path):
+            captured_texts.append(text)
+
+        _main.llm.ask = MagicMock(return_value=iter(["Olá mundo [aumenta o tom] [=]"]))
+        _main.tts.generate_tts_file = fake_tts
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert all("[aumenta o tom]" not in t for t in captured_texts)
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_trailing_junk_stripped_before_mood_token(self):
+        captured_texts = []
+
+        async def fake_tts(text, path):
+            captured_texts.append(text)
+
+        _main.llm.ask = MagicMock(return_value=iter(["Olá mundo!= [=]"]))
+        _main.tts.generate_tts_file = fake_tts
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+        assert all(t == "" or t[-1].isalnum() or t[-1].isspace() or 'ÿ' >= t[-1] >= 'À' for t in captured_texts if t)
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_stops_streaming_after_mood_token(self):
+        tokens = ["Olá", " mundo", " [=]", " lixo", " extra"]
+        _main.llm.ask = MagicMock(return_value=iter(tokens))
+        _main.tts.generate_tts_file = AsyncMock()
+
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+
+        sent_text = _main.pipeline.bot.context.send.call_args_list[-1][0][0]
+        assert "lixo" not in sent_text
+        assert "extra" not in sent_text
+        _main.pipeline.audio_to_play_queue.clear()
+
+    def test_discord_response_truncated_at_mood_token(self):
+        _main.llm.ask = MagicMock(return_value=iter(["Olá [=]<|eom_id|>lixo extra"]))
+        _main.tts.generate_tts_file = AsyncMock()
+
+        asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
+
+        sent_text = _main.pipeline.bot.context.send.call_args_list[-1][0][0]
+        assert "lixo extra" not in sent_text
+        assert "<|eom_id|>" not in sent_text
+        _main.pipeline.audio_to_play_queue.clear()
+
+
 class TestSentenceDetection:
     def _sentence_end_pattern(self):
         import re

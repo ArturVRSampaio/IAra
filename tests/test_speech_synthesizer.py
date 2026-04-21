@@ -122,3 +122,36 @@ class TestGenerateTTSFile:
     def test_executor_is_single_threaded(self):
         synth, _, _ = _make_synthesizer()
         assert synth._executor._max_workers == 1
+
+    def test_special_tokens_stripped_before_synthesis(self):
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        import numpy as np
+        mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
+        asyncio.run(synth.generate_tts_file("olá <|eom_id|> mundo", "/tmp/out.wav"))
+        text_sent = mock_pipeline.call_args[0][0]
+        assert "<|eom_id|>" not in text_sent
+
+    def test_role_markers_stripped_before_synthesis(self):
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        import numpy as np
+        mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
+        asyncio.run(synth.generate_tts_file("olá [user diz algo", "/tmp/out.wav"))
+        text_sent = mock_pipeline.call_args[0][0]
+        assert "[user" not in text_sent
+
+    def test_code_blocks_stripped_before_synthesis(self):
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        import numpy as np
+        mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
+        asyncio.run(synth.generate_tts_file("olá ```python\nprint('hi')\n``` mundo", "/tmp/out.wav"))
+        text_sent = mock_pipeline.call_args[0][0]
+        assert "```" not in text_sent
+        assert "print" not in text_sent
+
+    def test_inline_code_stripped_before_synthesis(self):
+        synth, mock_pipeline, mock_sf = _make_synthesizer()
+        import numpy as np
+        mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
+        asyncio.run(synth.generate_tts_file("use `foo()` para isso", "/tmp/out.wav"))
+        text_sent = mock_pipeline.call_args[0][0]
+        assert "`" not in text_sent

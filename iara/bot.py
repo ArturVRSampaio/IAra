@@ -21,6 +21,10 @@ stt = STT()
 llm = LLMAgent()
 tts = SpeechSynthesizer()
 
+_MOOD_RE = re.compile(r'\[([+\-=])\]')
+_MOOD_DELTA = {'+': 1, '-': -1, '=': 0}
+_TRAILING_JUNK_RE = re.compile(r'[^\w\sÀ-ÿ]+$')
+
 
 class AudioPipeline:
     def __init__(self, stt, llm, tts):
@@ -28,6 +32,7 @@ class AudioPipeline:
         self.llm = llm
         self.tts = tts
         self.bot = None
+        self.mood = 5
         self.user_voice_to_process_queue = {}
         self.audio_to_play_queue = deque()
         self.accept_packages = True
@@ -57,18 +62,33 @@ class AudioPipeline:
         buffer = ""
         sentence_end = re.compile(r"[.!?]")
 
+        _special_token_re = re.compile(r'<\|[^|]*\|>')
+        _bracket_re = re.compile(r'\[[^\]]*\]')
+
         def enqueue_synthesis(text: str) -> None:
+            text = _special_token_re.sub('', text)
+            text = _bracket_re.sub('', text)
+            text = _TRAILING_JUNK_RE.sub('', text).strip()
+            if not text:
+                return
             tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             tmp_file.close()
             ready = asyncio.Event()
             self.audio_to_play_queue.append((tmp_file.name, ready))
             asyncio.create_task(self.synthesize_and_signal(text, tmp_file.name, ready))
 
-        with self.llm.getChatSession():
+        with self.llm.getChatSession(self.mood):
             for token in self.llm.ask(transcript):
                 full_response += token
                 print(token, end="", flush=True)
                 buffer += token
+
+                if _MOOD_RE.search(full_response):
+                    pre_mood = _MOOD_RE.split(buffer)[0]
+                    if pre_mood.strip():
+                        enqueue_synthesis(pre_mood.strip())
+                    buffer = ""
+                    break
 
                 if (
                     sentence_end.search(buffer)
@@ -81,10 +101,18 @@ class AudioPipeline:
             if buffer.strip():
                 enqueue_synthesis(buffer.strip())
 
-        print()
+        mood_match = _MOOD_RE.search(full_response)
+        if mood_match:
+            self.mood = max(0, min(10, self.mood + _MOOD_DELTA[mood_match.group(1)]))
+            clean_response = _TRAILING_JUNK_RE.sub('', full_response[:mood_match.start()].strip())
+        else:
+            clean_response = _special_token_re.sub('', full_response).strip()
+
+        print(f"\n[MOOD: {self.mood}/10]")
         asyncio.create_task(self.bot.context.send(
             f"===============================================\n"
-            f"**Full Response**:\n**IAra says:** {full_response}\n"
+            f"**Full Response**:\n**IAra says:** {clean_response}\n"
+            f"**Mood:** {self.mood}/10\n"
             f"==============================================="
         ))
         self.can_release_accept_packages = True
