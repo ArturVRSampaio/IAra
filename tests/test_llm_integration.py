@@ -5,6 +5,7 @@ Skipped automatically in CI (no model available).
 """
 import os
 import re
+import time
 
 import pytest
 
@@ -253,3 +254,59 @@ class TestLLMAdversarialInputs:
             f"Response contains numbered steps: {response!r}"
         assert not self._MARKDOWN_HEADER_RE.search(response), \
             f"Response contains headers: {response!r}"
+
+
+@pytest.mark.integration
+class TestLLMResponseTime:
+    """
+    Latency tests — verify the model responds within acceptable bounds and
+    that streaming is actually streaming (first token arrives early).
+
+    Bounds are intentionally generous to stay hardware-agnostic:
+    - TTFT < 10s  : catches hangs before the first token
+    - Total < 60s : catches full generation hangs (250 token cap)
+    - TTFT < 50%  : first token must arrive in the first half of total time,
+                    proving the streaming pipeline is actually yielding incrementally
+    """
+
+    def _measure(self, llm, prompt, mood=5):
+        """Return (time_to_first_token, total_time, token_count)."""
+        t_start = time.perf_counter()
+        t_first = None
+        token_count = 0
+        with llm.getChatSession(mood):
+            for token in llm.ask(prompt):
+                if t_first is None:
+                    t_first = time.perf_counter() - t_start
+                token_count += 1
+        total = time.perf_counter() - t_start
+        return t_first or total, total, token_count
+
+    def test_first_token_arrives_within_10s(self, llm):
+        ttft, total, _ = self._measure(llm, "_bypass says: Olá IAra, tudo bem?")
+        assert ttft < 10, f"Time to first token too slow: {ttft:.2f}s"
+
+    def test_full_response_completes_within_60s(self, llm):
+        _, total, _ = self._measure(llm, "_bypass says: Fale um pouco sobre RPGs")
+        assert total < 60, f"Total response time too slow: {total:.2f}s"
+
+    def test_streaming_delivers_first_token_early(self, llm):
+        ttft, total, token_count = self._measure(llm, "_bypass says: Me conte sobre Dark Souls")
+        if token_count < 2:
+            pytest.skip("Response too short to measure streaming behaviour")
+        assert ttft < total * 0.5, (
+            f"First token ({ttft:.2f}s) did not arrive in first half of total time "
+            f"({total:.2f}s) — streaming may not be working correctly"
+        )
+
+    def test_response_time_is_consistent_across_moods(self, llm):
+        _, t_neutral, _ = self._measure(llm, "_bypass says: Olá!", mood=5)
+        _, t_angry, _ = self._measure(llm, "_bypass says: Olá!", mood=0)
+        _, t_happy, _ = self._measure(llm, "_bypass says: Olá!", mood=10)
+        # No mood should cause a response more than 3x slower than the fastest
+        fastest = min(t_neutral, t_angry, t_happy)
+        slowest = max(t_neutral, t_angry, t_happy)
+        assert slowest < fastest * 3, (
+            f"Response time varies too much across moods: "
+            f"neutral={t_neutral:.2f}s angry={t_angry:.2f}s happy={t_happy:.2f}s"
+        )
