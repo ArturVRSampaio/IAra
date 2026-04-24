@@ -176,14 +176,20 @@ class AudioPipeline:
             await asyncio.sleep(0.1)
 
     async def session_worker(self) -> None:
-        with self.llm.getChatSession(self.mood):
-            while True:
-                transcript = await self.transcript_queue.get()
-                try:
-                    await self.ask_llm_and_process(transcript)
-                except Exception as e:
-                    print(f"Error processing transcript: {e}")
-                    self.can_release_accept_packages = True
+        max_turns = int(os.getenv("IARA_MAX_SESSION_TURNS", "15"))
+        while True:
+            turns = 0
+            print(f"[SESSION] Opening fresh LLM session (mood {self.mood}/10)")
+            with self.llm.getChatSession(self.mood):
+                while turns < max_turns:
+                    transcript = await self.transcript_queue.get()
+                    try:
+                        await self.ask_llm_and_process(transcript)
+                        turns += 1
+                    except Exception as e:
+                        print(f"Error processing transcript: {e}")
+                        self.can_release_accept_packages = True
+            print(f"[SESSION] {turns} turns reached — resetting to preserve system prompt")
 
     async def voice_player(self) -> None:
         while True:
