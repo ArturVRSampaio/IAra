@@ -104,6 +104,7 @@ class AudioPipeline:
         mood_match = _MOOD_RE.search(full_response)
         if mood_match:
             self.mood = max(0, min(10, self.mood + _MOOD_DELTA[mood_match.group(1)]))
+            asyncio.create_task(self.bot.vts.trigger_mood_expression(self.mood))
             clean_response = _TRAILING_JUNK_RE.sub('', full_response[:mood_match.start()].strip())
         else:
             clean_response = _special_token_re.sub('', full_response).strip()
@@ -153,6 +154,7 @@ class AudioPipeline:
                 self.accept_packages = False
                 self.can_release_accept_packages = False
                 print("Stopped accepting packages.")
+                asyncio.create_task(self.bot.vts.execute_animation("IAra_Thinking"))
 
                 tasks = [self.transcribe_for_user(user) for user in self.user_voice_to_process_queue]
                 results = await asyncio.gather(*tasks, return_exceptions=True)

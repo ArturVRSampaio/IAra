@@ -189,6 +189,52 @@ class TestExecuteAnimation:
         assert vts_instance.request.call_count == 1
 
 
+class TestMoodToHotkey:
+    def test_mood_0_to_2_is_sad(self):
+        vts_talk, _ = _make_vts()
+        assert vts_talk._mood_to_hotkey(0) == "IAra_Sad"
+        assert vts_talk._mood_to_hotkey(1) == "IAra_Sad"
+        assert vts_talk._mood_to_hotkey(2) == "IAra_Sad"
+
+    def test_mood_3_to_4_is_neutral(self):
+        vts_talk, _ = _make_vts()
+        assert vts_talk._mood_to_hotkey(3) == "IAra_Neutral"
+        assert vts_talk._mood_to_hotkey(4) == "IAra_Neutral"
+
+    def test_mood_5_is_happy(self):
+        vts_talk, _ = _make_vts()
+        assert vts_talk._mood_to_hotkey(5) == "IAra_Happy"
+
+    def test_mood_6_to_10_is_excited(self):
+        vts_talk, _ = _make_vts()
+        for mood in range(6, 11):
+            assert vts_talk._mood_to_hotkey(mood) == "IAra_Excited"
+
+
+class TestTriggerMoodExpression:
+    def test_calls_execute_animation_with_correct_hotkey(self):
+        vts_talk, _ = _make_vts()
+        vts_talk.is_connected = True
+
+        async def run():
+            with patch.object(vts_talk, "execute_animation", new_callable=AsyncMock) as mock_exec:
+                await vts_talk.trigger_mood_expression(5)
+                mock_exec.assert_called_once_with("IAra_Happy")
+
+        asyncio.run(run())
+
+    def test_mood_maps_through_to_animation(self):
+        vts_talk, _ = _make_vts()
+        vts_talk.is_connected = True
+
+        async def run():
+            with patch.object(vts_talk, "execute_animation", new_callable=AsyncMock) as mock_exec:
+                await vts_talk.trigger_mood_expression(1)
+                mock_exec.assert_called_once_with("IAra_Sad")
+
+        asyncio.run(run())
+
+
 class TestChangeExpression:
     def test_connects_if_not_connected(self):
         vts_talk, vts_instance = _make_vts()
