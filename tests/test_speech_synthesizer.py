@@ -29,9 +29,10 @@ class TestSpeechSynthesizerInit:
         _, kwargs = mock_kokoro.KPipeline.call_args
         assert kwargs.get("lang_code") == 'p'
 
-    def test_default_voice_is_pf_dora(self):
+    def test_default_voice_blends_romance_feminine_voices(self):
         synth, _, _ = _make_synthesizer()
-        assert synth.voice == 'pf_dora'
+        for voice in ('pf_dora', 'ef_dora', 'ff_siwis', 'if_sara'):
+            assert voice in synth.voice
 
 
 class TestGenerateTTSFile:
@@ -78,7 +79,7 @@ class TestGenerateTTSFile:
         mock_pipeline.return_value = iter([("seg", "ph", np.zeros(100, dtype="float32"))])
         asyncio.run(synth.generate_tts_file("texto", "/tmp/out.wav"))
         _, kwargs = mock_pipeline.call_args
-        assert kwargs.get("voice") == "pf_dora"
+        assert kwargs.get("voice") == synth.voice
 
     def test_no_audio_chunks_skips_write(self):
         synth, mock_pipeline, mock_sf = _make_synthesizer()
