@@ -35,6 +35,7 @@ class AudioPipeline:
         self.mood = 5
         self.user_voice_to_process_queue = {}
         self.audio_to_play_queue = deque()
+        self.transcript_queue = asyncio.Queue()
         self.accept_packages = True
         self.can_release_accept_packages = True
 
@@ -77,29 +78,28 @@ class AudioPipeline:
             self.audio_to_play_queue.append((tmp_file.name, ready))
             asyncio.create_task(self.synthesize_and_signal(text, tmp_file.name, ready))
 
-        with self.llm.getChatSession(self.mood):
-            for token in self.llm.ask(transcript):
-                full_response += token
-                print(token, end="", flush=True)
-                buffer += token
+        for token in self.llm.ask(transcript):
+            full_response += token
+            print(token, end="", flush=True)
+            buffer += token
 
-                if _MOOD_RE.search(full_response):
-                    pre_mood = _MOOD_RE.split(buffer)[0]
-                    if pre_mood.strip():
-                        enqueue_synthesis(pre_mood.strip())
-                    buffer = ""
-                    break
+            if _MOOD_RE.search(full_response):
+                pre_mood = _MOOD_RE.split(buffer)[0]
+                if pre_mood.strip():
+                    enqueue_synthesis(pre_mood.strip())
+                buffer = ""
+                break
 
-                if (
-                    sentence_end.search(buffer)
-                    and len(buffer.strip().split()) >= 3
-                    and buffer.strip()[-1] in ".!?"
-                ):
-                    enqueue_synthesis(buffer.strip())
-                    buffer = ""
-
-            if buffer.strip():
+            if (
+                sentence_end.search(buffer)
+                and len(buffer.strip().split()) >= 3
+                and buffer.strip()[-1] in ".!?"
+            ):
                 enqueue_synthesis(buffer.strip())
+                buffer = ""
+
+        if buffer.strip():
+            enqueue_synthesis(buffer.strip())
 
         mood_match = _MOOD_RE.search(full_response)
         if mood_match:
@@ -172,8 +172,18 @@ class AudioPipeline:
                 self.user_voice_to_process_queue.clear()
 
                 if full_transcript:
-                    await self.ask_llm_and_process(full_transcript)
+                    await self.transcript_queue.put(full_transcript)
             await asyncio.sleep(0.1)
+
+    async def session_worker(self) -> None:
+        with self.llm.getChatSession(self.mood):
+            while True:
+                transcript = await self.transcript_queue.get()
+                try:
+                    await self.ask_llm_and_process(transcript)
+                except Exception as e:
+                    print(f"Error processing transcript: {e}")
+                    self.can_release_accept_packages = True
 
     async def voice_player(self) -> None:
         while True:
@@ -276,5 +286,6 @@ async def main():
 
     asyncio.create_task(pipeline.voice_consumer())
     asyncio.create_task(pipeline.voice_player())
+    asyncio.create_task(pipeline.session_worker())
 
     await bot.start(os.getenv("DISCORD_TOKEN"))

@@ -288,6 +288,7 @@ class TestAskLLMAndProcess:
         _main.pipeline.can_release_accept_packages = False
         _main.pipeline.bot = MagicMock()
         _main.pipeline.bot.context = AsyncMock()
+        _main.pipeline.bot.vts = AsyncMock()
 
     def test_adds_audio_to_queue(self):
         _main.llm.ask = MagicMock(return_value=iter(["Olá, tudo bem?"]))
@@ -359,6 +360,7 @@ class TestVoiceConsumer:
         bot_mock = MagicMock()
         bot_mock.last_audio_time = datetime.now() - timedelta(seconds=2)
         bot_mock.context = AsyncMock()
+        bot_mock.vts = AsyncMock()
         _main.pipeline.bot = bot_mock
         _main.pipeline.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="")
@@ -382,6 +384,7 @@ class TestVoiceConsumer:
         bot_mock = MagicMock()
         bot_mock.last_audio_time = datetime.now() - timedelta(seconds=2)
         bot_mock.context = AsyncMock()
+        bot_mock.vts = AsyncMock()
         _main.pipeline.bot = bot_mock
         _main.pipeline.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="")
@@ -405,6 +408,7 @@ class TestVoiceConsumer:
         bot_mock = MagicMock()
         bot_mock.last_audio_time = datetime.now() - timedelta(seconds=2)
         bot_mock.context = AsyncMock()
+        bot_mock.vts = AsyncMock()
         _main.pipeline.bot = bot_mock
         _main.pipeline.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="")
@@ -422,25 +426,19 @@ class TestVoiceConsumer:
         asyncio.run(run_one_tick())
         assert _main.pipeline.can_release_accept_packages is True
 
-    def test_calls_ask_llm_when_transcript_non_empty(self):
+    def test_enqueues_transcript_when_non_empty(self):
         from datetime import datetime, timedelta
 
         bot_mock = MagicMock()
         bot_mock.last_audio_time = datetime.now() - timedelta(seconds=2)
         bot_mock.context = AsyncMock()
+        bot_mock.vts = AsyncMock()
         _main.pipeline.bot = bot_mock
         _main.pipeline.user_voice_to_process_queue["user1"] = [b"\x00" * 100]
         _main.stt.transcribe_audio = MagicMock(return_value="olá")
-        _main.tts.generate_tts_file = AsyncMock()
 
-        llm_called_with = []
-
-        async def fake_ask_llm(transcript):
-            llm_called_with.append(transcript)
-            _main.pipeline.can_release_accept_packages = True
-
-        original = _main.pipeline.ask_llm_and_process
-        _main.pipeline.ask_llm_and_process = fake_ask_llm
+        while not _main.pipeline.transcript_queue.empty():
+            _main.pipeline.transcript_queue.get_nowait()
 
         async def run_one_tick():
             task = asyncio.create_task(_main.pipeline.voice_consumer())
@@ -451,13 +449,11 @@ class TestVoiceConsumer:
             except asyncio.CancelledError:
                 pass
 
-        try:
-            asyncio.run(run_one_tick())
-        finally:
-            _main.pipeline.ask_llm_and_process = original
+        asyncio.run(run_one_tick())
 
-        assert len(llm_called_with) == 1
-        assert "olá" in llm_called_with[0]
+        assert not _main.pipeline.transcript_queue.empty()
+        transcript = _main.pipeline.transcript_queue.get_nowait()
+        assert "olá" in transcript
 
 
 class TestVoicePlayer:
@@ -693,6 +689,7 @@ class TestAskLLMSentenceSplitting:
         _main.pipeline.can_release_accept_packages = False
         _main.pipeline.bot = MagicMock()
         _main.pipeline.bot.context = AsyncMock()
+        _main.pipeline.bot.vts = AsyncMock()
 
     def test_multiple_sentences_enqueue_multiple_files(self):
         _main.llm.ask = MagicMock(return_value=iter([
@@ -720,6 +717,7 @@ class TestMood:
         _main.pipeline.can_release_accept_packages = False
         _main.pipeline.bot = MagicMock()
         _main.pipeline.bot.context = AsyncMock()
+        _main.pipeline.bot.vts = AsyncMock()
 
     def test_plus_token_increments_mood(self):
         _main.llm.ask = MagicMock(return_value=iter(["Olá [+]"]))
