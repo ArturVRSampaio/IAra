@@ -1,4 +1,4 @@
-# IAra
+# IAra - your local AI Vtuber!
 
 ![tests](https://github.com/ArturVRSampaio/IAra/actions/workflows/tests.yml/badge.svg)
 
