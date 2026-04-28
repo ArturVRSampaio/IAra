@@ -10,3 +10,5 @@ __pycache__/
 .venv/
 .coverage
 .claude/
+experiments/stt/transcricao.txt
+experiments/stt/*.txt
