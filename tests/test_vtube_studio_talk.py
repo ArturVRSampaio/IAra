@@ -188,6 +188,21 @@ class TestExecuteAnimation:
         asyncio.run(vts_talk.execute_animation("Wave"))
         assert vts_instance.request.call_count == 1
 
+    def test_connection_error_sets_disconnected(self):
+        vts_talk, vts_instance = _make_vts()
+        vts_talk.is_connected = True
+        vts_instance.request.side_effect = Exception("ConnectionClosedError")
+
+        asyncio.run(vts_talk.execute_animation("Wave"))
+        assert vts_talk.is_connected is False
+
+    def test_connection_error_does_not_raise(self):
+        vts_talk, vts_instance = _make_vts()
+        vts_talk.is_connected = True
+        vts_instance.request.side_effect = Exception("ConnectionClosedError")
+
+        asyncio.run(vts_talk.execute_animation("Wave"))  # must not raise
+
 
 class TestMoodToHotkey:
     def test_mood_0_to_2_is_sad(self):

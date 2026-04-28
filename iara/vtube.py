@@ -72,15 +72,18 @@ class VTubeStudioTalk:
             print(f"VTube Studio not authenticated — cannot trigger {animation_hotkey}")
             return
 
-        hotkey_response = await self.vts.request(self.vts.vts_request.requestHotKeyList())
-        hotkeys = [hk['name'] for hk in hotkey_response.get('data', {}).get('availableHotkeys', [])]
-        print("Available hotkeys:", hotkeys)
+        try:
+            hotkey_response = await self.vts.request(self.vts.vts_request.requestHotKeyList())
+            hotkeys = [hk['name'] for hk in hotkey_response.get('data', {}).get('availableHotkeys', [])]
 
-        if animation_hotkey in hotkeys:
-            await self.vts.request(self.vts.vts_request.requestTriggerHotKey(animation_hotkey))
-            print(f"Triggered {animation_hotkey}")
-        else:
-            print(f"Hotkey '{animation_hotkey}' not found in VTube Studio")
+            if animation_hotkey in hotkeys:
+                await self.vts.request(self.vts.vts_request.requestTriggerHotKey(animation_hotkey))
+                print(f"Triggered {animation_hotkey}")
+            else:
+                print(f"Hotkey '{animation_hotkey}' not found in VTube Studio")
+        except Exception as e:
+            print(f"VTube Studio connection lost during animation: {e}")
+            self.is_connected = False
 
     def _mood_to_hotkey(self, mood: int) -> str:
         if mood <= 2:
