@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-          grep -vE "^torch" requirements-dev.txt | pip install -r /dev/stdin
+          pip install -r requirements-dev.txt
 
       - name: Lint and format check
         run: |
