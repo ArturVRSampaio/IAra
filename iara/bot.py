@@ -34,13 +34,22 @@ class AudioPipeline:
         self.stt = stt
         self.llm = llm
         self.tts = tts
-        self.bot: DiscordBot | None = None
+        self._bot: DiscordBot | None = None
         self.mood: int = 5
         self.user_voice_to_process_queue: dict[Any, list[bytes]] = {}
         self.audio_to_play_queue: deque[tuple[str, asyncio.Event]] = deque()
         self.transcript_queue: asyncio.Queue[str] = asyncio.Queue()
         self.accept_packages: bool = True
         self.can_release_accept_packages: bool = True
+
+    @property
+    def bot(self) -> DiscordBot:
+        assert self._bot is not None, "AudioPipeline.bot accessed before DiscordBot was wired"
+        return self._bot
+
+    @bot.setter
+    def bot(self, value: DiscordBot) -> None:
+        self._bot = value
 
     async def transcribe_for_user(self, user: Any) -> str:
         pcm_chunks = self.user_voice_to_process_queue.get(user, [])
@@ -107,7 +116,7 @@ class AudioPipeline:
         mood_match = _MOOD_RE.search(full_response)
         if mood_match:
             self.mood = max(0, min(10, self.mood + _MOOD_DELTA[mood_match.group(1)]))
-            asyncio.create_task(self.bot.vts.trigger_mood_expression(self.mood))  # type: ignore[union-attr]
+            asyncio.create_task(self.bot.vts.trigger_mood_expression(self.mood))
             clean_response = _TRAILING_JUNK_RE.sub('', full_response[:mood_match.start()].strip())
         else:
             clean_response = _special_token_re.sub('', full_response).strip()
@@ -135,7 +144,7 @@ class AudioPipeline:
                 self.audio_to_play_queue.popleft()
                 continue
 
-            success = await self.bot.play_audio(audio_file)  # type: ignore[union-attr]
+            success = await self.bot.play_audio(audio_file)
 
             if success:
                 try:
@@ -151,7 +160,7 @@ class AudioPipeline:
     async def voice_consumer(self) -> None:
         while True:
             current_time = datetime.now()
-            if (self.bot and self.bot.last_audio_time and
+            if (self._bot and self.bot.last_audio_time and
                     (current_time - self.bot.last_audio_time >= timedelta(seconds=1) and
                      self.accept_packages and self.user_voice_to_process_queue)):
                 self.accept_packages = False

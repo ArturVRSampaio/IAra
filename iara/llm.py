@@ -75,9 +75,9 @@ class LLMAgent:
     def getChatSession(self, mood: int = 5) -> AbstractContextManager[Any]:
         return self.gpt4all.chat_session(system_prompt=build_system_prompt(mood))
 
-    def ask(self, messages: str) -> Iterator[str] | str:
+    def ask(self, messages: str) -> Iterator[str]:
         try:
-            response = self.gpt4all.generate(
+            return self.gpt4all.generate(
                 prompt=messages,
                 max_tokens=250,
                 n_batch=128,
@@ -88,8 +88,7 @@ class LLMAgent:
                 repeat_last_n=128,
                 streaming=True
             )
-            return response
 
         except Exception as e:
             print("LLM ERROR:", e)
-            return ""
+            return iter([])

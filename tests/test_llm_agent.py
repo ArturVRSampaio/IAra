@@ -126,10 +126,10 @@ class TestAsk:
         _, kwargs = llm.gpt4all.generate.call_args
         assert kwargs.get("streaming") is True
 
-    def test_returns_empty_string_on_exception(self):
+    def test_returns_empty_iterator_on_exception(self):
         llm, _, _ = _make_llm()
         llm.gpt4all.generate.side_effect = RuntimeError("model error")
-        assert llm.ask("pergunta") == ""
+        assert list(llm.ask("pergunta")) == []
 
     def test_max_tokens_set(self):
         llm, _, _ = _make_llm()
