@@ -6,7 +6,7 @@ import re
 import tempfile
 from collections import deque
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import discord
 import torchaudio
@@ -195,9 +195,10 @@ class AudioPipeline:
                     if isinstance(result, str) and result:
                         full_transcript += result
                         print(f"[TRANSCRIPT] {result}")
-                        asyncio.create_task(
-                            self.bot.context.send(f"**{result.strip()}**")
-                        )  # type: ignore[union-attr]
+                        if self.bot.context is not None:
+                            asyncio.create_task(
+                                self.bot.context.send(f"**{result.strip()}**")
+                            )
 
                 if not full_transcript:
                     self.can_release_accept_packages = True
@@ -281,9 +282,13 @@ class DiscordBot(commands.Cog):
     @commands.command()
     async def test(self, ctx: commands.Context) -> None:
         self.context = ctx
-        self.voice_client = await ctx.author.voice.channel.connect(
+        member = cast(discord.Member, ctx.author)
+        if not member.voice or not member.voice.channel:
+            await ctx.send("You must be in a voice channel!")
+            return
+        self.voice_client = await member.voice.channel.connect(
             cls=voice_recv.VoiceRecvClient
-        )  # type: ignore[union-attr]
+        )
         self.voice_client.listen(voice_recv.BasicSink(self._voice_callback))
         await ctx.send("Bot connected to voice channel!")
 
@@ -295,20 +300,16 @@ class DiscordBot(commands.Cog):
                 print("Disconnecting from voice channel to reconnect...")
                 await self.voice_client.disconnect(force=False)
 
-            if (
-                not self.context
-                or not self.context.author.voice
-                or not self.context.author.voice.channel
-            ):  # type: ignore[union-attr]
+            member = cast(discord.Member, self.context.author) if self.context else None
+            if not member or not member.voice or not member.voice.channel:
                 print("Cannot reconnect: No valid voice channel or context found.")
                 return False
 
-            print(
-                f"Reconnecting to voice channel: {self.context.author.voice.channel.name}"
-            )  # type: ignore[union-attr]
-            self.voice_client = await self.context.author.voice.channel.connect(
+            channel = member.voice.channel
+            print(f"Reconnecting to voice channel: {channel.name}")
+            self.voice_client = await channel.connect(
                 cls=voice_recv.VoiceRecvClient
-            )  # type: ignore[union-attr]
+            )
             self.voice_client.listen(voice_recv.BasicSink(self._voice_callback))
             print("Voice listener reinitialized successfully.")
             await self.context.send("Bot reconnected to voice channel!")
