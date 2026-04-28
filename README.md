@@ -3,6 +3,8 @@
 ![tests](https://github.com/ArturVRSampaio/IAra/actions/workflows/tests.yml/badge.svg)
 [![codecov](https://codecov.io/gh/ArturVRSampaio/IAra/branch/main/graph/badge.svg)](https://codecov.io/gh/ArturVRSampaio/IAra)
 
+[![Coverage sunburst](https://codecov.io/github/ArturVRSampaio/IAra/graphs/sunburst.svg?token=ZEFFL2X2S6)](https://codecov.io/gh/ArturVRSampaio/IAra)
+
 **I**nteligência **A**rtificial **R**aramente **A**curada
 
 IAra is an interactive VTuber for Discord created by [ArturVRSampaio](https://github.com/ArturVRSampaio). She listens to users in a voice channel, transcribes their speech, generates responses with a local LLM, and talks back — with synchronized mouth animation and mood-based expressions in VTube Studio.
