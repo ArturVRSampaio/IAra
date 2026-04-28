@@ -42,4 +42,6 @@ jobs:
           fail_ci_if_error: false
 
       - name: Audit dependencies
-        run: pip-audit -r requirements.txt
+        # GHSA-mrfv-m5wm-5w6w (pynacl<1.6) is ignored: discord.py==2.7.1 pins pynacl<1.6
+        # and cannot be upgraded until discord.py relaxes the constraint.
+        run: pip-audit -r requirements.txt --ignore-vuln GHSA-mrfv-m5wm-5w6w
