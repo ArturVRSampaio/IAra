@@ -307,9 +307,7 @@ class DiscordBot(commands.Cog):
 
             channel = member.voice.channel
             print(f"Reconnecting to voice channel: {channel.name}")
-            self.voice_client = await channel.connect(
-                cls=voice_recv.VoiceRecvClient
-            )
+            self.voice_client = await channel.connect(cls=voice_recv.VoiceRecvClient)
             self.voice_client.listen(voice_recv.BasicSink(self._voice_callback))
             print("Voice listener reinitialized successfully.")
             await self.context.send("Bot reconnected to voice channel!")
