@@ -20,10 +20,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu
-          grep -vE "^(torch|torchaudio|torchvision)==" requirements.txt | pip install -r /dev/stdin
-          pip install discord.py==2.7.1
-          pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
+          pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+          grep -vE "^torch" requirements-dev.txt | pip install -r /dev/stdin
 
       - name: Run tests
         run: python -m pytest tests/ -q -m "not integration"
