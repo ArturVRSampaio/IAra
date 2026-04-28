@@ -5,6 +5,7 @@ iara.bot instantiates STT, LLMAgent, SpeechSynthesizer at module level and creat
 a module-level AudioPipeline. All heavy dependencies are mocked via conftest.py
 before this module is imported.
 """
+
 import asyncio
 import os
 import sys
@@ -12,14 +13,13 @@ import tempfile
 from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 
 def _import_bot():
     """Import iara.bot with all ML constructors mocked out."""
     sys.modules["dotenv"].load_dotenv = MagicMock()
 
     import importlib
+
     if "iara.bot" in sys.modules:
         return sys.modules["iara.bot"]
     return importlib.import_module("iara.bot")
@@ -52,6 +52,7 @@ class TestDiscordBotPlayAudio:
             tmp_path = f.name
 
         try:
+
             def fake_play(source, **kwargs):
                 after = kwargs.get("after")
                 if after:
@@ -538,7 +539,9 @@ class TestSynthesizeAndSignal:
 
         async def run():
             ready = asyncio.Event()
-            await _main.pipeline.synthesize_and_signal("olá mundo", "/tmp/abc.wav", ready)
+            await _main.pipeline.synthesize_and_signal(
+                "olá mundo", "/tmp/abc.wav", ready
+            )
 
         asyncio.run(run())
         _main.tts.generate_tts_file.assert_called_once_with("olá mundo", "/tmp/abc.wav")
@@ -692,9 +695,18 @@ class TestAskLLMSentenceSplitting:
         _main.pipeline.bot.vts = AsyncMock()
 
     def test_multiple_sentences_enqueue_multiple_files(self):
-        _main.llm.ask = MagicMock(return_value=iter([
-            "Olá", "!", " Tudo", " bem", " aqui", ".",
-        ]))
+        _main.llm.ask = MagicMock(
+            return_value=iter(
+                [
+                    "Olá",
+                    "!",
+                    " Tudo",
+                    " bem",
+                    " aqui",
+                    ".",
+                ]
+            )
+        )
         _main.tts.generate_tts_file = AsyncMock()
 
         asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
@@ -772,7 +784,9 @@ class TestMood:
         _main.llm.ask = MagicMock(return_value=iter(["Olá mundo [+]"]))
         _main.tts.generate_tts_file = fake_tts
         asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
-        assert all("[+]" not in t and "[-]" not in t and "[=]" not in t for t in captured_texts)
+        assert all(
+            "[+]" not in t and "[-]" not in t and "[=]" not in t for t in captured_texts
+        )
         _main.pipeline.audio_to_play_queue.clear()
 
     def test_special_tokens_stripped_from_tts(self):
@@ -808,7 +822,11 @@ class TestMood:
         _main.llm.ask = MagicMock(return_value=iter(["Olá mundo!= [=]"]))
         _main.tts.generate_tts_file = fake_tts
         asyncio.run(_main.pipeline.ask_llm_and_process("user says: oi"))
-        assert all(t == "" or t[-1].isalnum() or t[-1].isspace() or 'ÿ' >= t[-1] >= 'À' for t in captured_texts if t)
+        assert all(
+            t == "" or t[-1].isalnum() or t[-1].isspace() or "ÿ" >= t[-1] >= "À"
+            for t in captured_texts
+            if t
+        )
         _main.pipeline.audio_to_play_queue.clear()
 
     def test_stops_streaming_after_mood_token(self):
@@ -838,6 +856,7 @@ class TestMood:
 class TestSentenceDetection:
     def _sentence_end_pattern(self):
         import re
+
         return re.compile(r"[.!?]")
 
     def test_comma_does_not_end_sentence(self):

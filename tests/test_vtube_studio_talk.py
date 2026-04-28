@@ -12,6 +12,7 @@ def _make_vts():
     vts_cls.return_value = vts_instance
     sys.modules["pyvts"].vts = vts_cls
     from iara.vtube import VTubeStudioTalk
+
     return VTubeStudioTalk(), vts_instance
 
 
@@ -106,8 +107,12 @@ class TestSyncMouth:
         waveform = torch.zeros(1, 480)
 
         async def run():
-            with patch.object(vts_talk, "connect", new_callable=AsyncMock) as mock_connect:
-                mock_connect.side_effect = lambda: setattr(vts_talk, "is_connected", True) or None
+            with patch.object(
+                vts_talk, "connect", new_callable=AsyncMock
+            ) as mock_connect:
+                mock_connect.side_effect = lambda: (
+                    setattr(vts_talk, "is_connected", True) or None
+                )
                 await vts_talk.sync_mouth(waveform, 48000)
                 mock_connect.assert_called_once()
 
@@ -119,7 +124,9 @@ class TestSyncMouth:
         waveform = torch.zeros(1, 480)
 
         async def run():
-            with patch.object(vts_talk, "connect", new_callable=AsyncMock) as mock_connect:
+            with patch.object(
+                vts_talk, "connect", new_callable=AsyncMock
+            ) as mock_connect:
                 await vts_talk.sync_mouth(waveform, 48000)
                 mock_connect.assert_not_called()
 
@@ -155,13 +162,15 @@ class TestExecuteAnimation:
     def test_connects_if_not_connected(self):
         vts_talk, vts_instance = _make_vts()
         vts_talk.is_connected = False
-        vts_instance.request.return_value = {
-            "data": {"availableHotkeys": []}
-        }
+        vts_instance.request.return_value = {"data": {"availableHotkeys": []}}
 
         async def run():
-            with patch.object(vts_talk, "connect", new_callable=AsyncMock) as mock_connect:
-                mock_connect.side_effect = lambda: setattr(vts_talk, "is_connected", True) or None
+            with patch.object(
+                vts_talk, "connect", new_callable=AsyncMock
+            ) as mock_connect:
+                mock_connect.side_effect = lambda: (
+                    setattr(vts_talk, "is_connected", True) or None
+                )
                 await vts_talk.execute_animation("Wave")
                 mock_connect.assert_called_once()
 
@@ -232,7 +241,9 @@ class TestTriggerMoodExpression:
         vts_talk.is_connected = True
 
         async def run():
-            with patch.object(vts_talk, "execute_animation", new_callable=AsyncMock) as mock_exec:
+            with patch.object(
+                vts_talk, "execute_animation", new_callable=AsyncMock
+            ) as mock_exec:
                 await vts_talk.trigger_mood_expression(5)
                 mock_exec.assert_called_once_with("IAra_Happy")
 
@@ -243,7 +254,9 @@ class TestTriggerMoodExpression:
         vts_talk.is_connected = True
 
         async def run():
-            with patch.object(vts_talk, "execute_animation", new_callable=AsyncMock) as mock_exec:
+            with patch.object(
+                vts_talk, "execute_animation", new_callable=AsyncMock
+            ) as mock_exec:
                 await vts_talk.trigger_mood_expression(1)
                 mock_exec.assert_called_once_with("IAra_Sad")
 
@@ -256,8 +269,12 @@ class TestChangeExpression:
         vts_talk.is_connected = False
 
         async def run():
-            with patch.object(vts_talk, "connect", new_callable=AsyncMock) as mock_connect:
-                mock_connect.side_effect = lambda: setattr(vts_talk, "is_connected", True) or None
+            with patch.object(
+                vts_talk, "connect", new_callable=AsyncMock
+            ) as mock_connect:
+                mock_connect.side_effect = lambda: (
+                    setattr(vts_talk, "is_connected", True) or None
+                )
                 await vts_talk.change_expression()
                 mock_connect.assert_called_once()
 

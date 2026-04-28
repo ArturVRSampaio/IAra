@@ -1,10 +1,10 @@
 import sys
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 # discord.ext.commands.Cog must be a real type so DiscordBot can inherit from it
 _discord_commands_mock = MagicMock()
 _discord_commands_mock.Cog = object
-_discord_commands_mock.command = lambda **kw: (lambda f: f)  # passthrough decorator
+_discord_commands_mock.command = lambda **kw: lambda f: f  # passthrough decorator
 
 _discord_mock = MagicMock()
 _discord_ext_mock = MagicMock()

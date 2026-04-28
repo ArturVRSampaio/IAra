@@ -24,9 +24,9 @@ stt = STT()
 llm = LLMAgent()
 tts = SpeechSynthesizer()
 
-_MOOD_RE = re.compile(r'\[([+\-=])\]')
-_MOOD_DELTA: dict[str, int] = {'+': 1, '-': -1, '=': 0}
-_TRAILING_JUNK_RE = re.compile(r'[^\w\sÀ-ÿ]+$')
+_MOOD_RE = re.compile(r"\[([+\-=])\]")
+_MOOD_DELTA: dict[str, int] = {"+": 1, "-": -1, "=": 0}
+_TRAILING_JUNK_RE = re.compile(r"[^\w\sÀ-ÿ]+$")
 
 
 class AudioPipeline:
@@ -44,7 +44,9 @@ class AudioPipeline:
 
     @property
     def bot(self) -> DiscordBot:
-        assert self._bot is not None, "AudioPipeline.bot accessed before DiscordBot was wired"
+        assert self._bot is not None, (
+            "AudioPipeline.bot accessed before DiscordBot was wired"
+        )
         return self._bot
 
     @bot.setter
@@ -56,7 +58,9 @@ class AudioPipeline:
         transcript = self.stt.transcribe_audio(pcm_chunks)
         return f"{user} says: {transcript}\n" if transcript else ""
 
-    async def synthesize_and_signal(self, text: str, path: str, ready: asyncio.Event) -> None:
+    async def synthesize_and_signal(
+        self, text: str, path: str, ready: asyncio.Event
+    ) -> None:
         try:
             await self.tts.generate_tts_file(text, path)
         except Exception as e:
@@ -65,23 +69,25 @@ class AudioPipeline:
             ready.set()
 
     async def ask_llm_and_process(self, transcript: str) -> None:
-        asyncio.create_task(self.bot.context.send(  # type: ignore[union-attr]
-            f"===============================================\n"
-            f"**Full Transcript**:\n{transcript}\n"
-            f"==============================================="
-        ))
+        asyncio.create_task(
+            self.bot.context.send(  # type: ignore[union-attr]
+                f"===============================================\n"
+                f"**Full Transcript**:\n{transcript}\n"
+                f"==============================================="
+            )
+        )
 
         full_response = ""
         buffer = ""
         sentence_end = re.compile(r"[.!?]")
 
-        _special_token_re = re.compile(r'<\|[^|]*\|>')
-        _bracket_re = re.compile(r'\[[^\]]*\]')
+        _special_token_re = re.compile(r"<\|[^|]*\|>")
+        _bracket_re = re.compile(r"\[[^\]]*\]")
 
         def enqueue_synthesis(text: str) -> None:
-            text = _special_token_re.sub('', text)
-            text = _bracket_re.sub('', text)
-            text = _TRAILING_JUNK_RE.sub('', text).strip()
+            text = _special_token_re.sub("", text)
+            text = _bracket_re.sub("", text)
+            text = _TRAILING_JUNK_RE.sub("", text).strip()
             if not text:
                 return
             tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -117,17 +123,21 @@ class AudioPipeline:
         if mood_match:
             self.mood = max(0, min(10, self.mood + _MOOD_DELTA[mood_match.group(1)]))
             asyncio.create_task(self.bot.vts.trigger_mood_expression(self.mood))
-            clean_response = _TRAILING_JUNK_RE.sub('', full_response[:mood_match.start()].strip())
+            clean_response = _TRAILING_JUNK_RE.sub(
+                "", full_response[: mood_match.start()].strip()
+            )
         else:
-            clean_response = _special_token_re.sub('', full_response).strip()
+            clean_response = _special_token_re.sub("", full_response).strip()
 
         print(f"\n[MOOD: {self.mood}/10]")
-        asyncio.create_task(self.bot.context.send(  # type: ignore[union-attr]
-            f"===============================================\n"
-            f"**Full Response**:\n**IAra says:** {clean_response}\n"
-            f"**Mood:** {self.mood}/10\n"
-            f"==============================================="
-        ))
+        asyncio.create_task(
+            self.bot.context.send(  # type: ignore[union-attr]
+                f"===============================================\n"
+                f"**Full Response**:\n**IAra says:** {clean_response}\n"
+                f"**Mood:** {self.mood}/10\n"
+                f"==============================================="
+            )
+        )
         self.can_release_accept_packages = True
 
     async def play_audio_queue(self) -> None:
@@ -160,15 +170,24 @@ class AudioPipeline:
     async def voice_consumer(self) -> None:
         while True:
             current_time = datetime.now()
-            if (self._bot and self.bot.last_audio_time and
-                    (current_time - self.bot.last_audio_time >= timedelta(seconds=1) and
-                     self.accept_packages and self.user_voice_to_process_queue)):
+            if (
+                self._bot
+                and self.bot.last_audio_time
+                and (
+                    current_time - self.bot.last_audio_time >= timedelta(seconds=1)
+                    and self.accept_packages
+                    and self.user_voice_to_process_queue
+                )
+            ):
                 self.accept_packages = False
                 self.can_release_accept_packages = False
                 print("Stopped accepting packages.")
                 asyncio.create_task(self.bot.vts.execute_animation("IAra_Thinking"))
 
-                tasks = [self.transcribe_for_user(user) for user in self.user_voice_to_process_queue]
+                tasks = [
+                    self.transcribe_for_user(user)
+                    for user in self.user_voice_to_process_queue
+                ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 full_transcript = ""
@@ -176,7 +195,9 @@ class AudioPipeline:
                     if isinstance(result, str) and result:
                         full_transcript += result
                         print(f"[TRANSCRIPT] {result}")
-                        asyncio.create_task(self.bot.context.send(f"**{result.strip()}**"))  # type: ignore[union-attr]
+                        asyncio.create_task(
+                            self.bot.context.send(f"**{result.strip()}**")
+                        )  # type: ignore[union-attr]
 
                 if not full_transcript:
                     self.can_release_accept_packages = True
@@ -201,7 +222,9 @@ class AudioPipeline:
                     except Exception as e:
                         print(f"Error processing transcript: {e}")
                         self.can_release_accept_packages = True
-            print(f"[SESSION] {turns} turns reached — resetting to preserve system prompt")
+            print(
+                f"[SESSION] {turns} turns reached — resetting to preserve system prompt"
+            )
 
     async def voice_player(self) -> None:
         while True:
@@ -242,8 +265,7 @@ class DiscordBot(commands.Cog):
         waveform, sample_rate = torchaudio.load(audio_file)
 
         self.voice_client.play(  # type: ignore[union-attr]
-            audio_source,
-            after=lambda e: loop.call_soon_threadsafe(playback_done.set)
+            audio_source, after=lambda e: loop.call_soon_threadsafe(playback_done.set)
         )
         mouth_task = asyncio.create_task(self.vts.sync_mouth(waveform, sample_rate))
 
@@ -259,7 +281,9 @@ class DiscordBot(commands.Cog):
     @commands.command()
     async def test(self, ctx: commands.Context) -> None:
         self.context = ctx
-        self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)  # type: ignore[union-attr]
+        self.voice_client = await ctx.author.voice.channel.connect(
+            cls=voice_recv.VoiceRecvClient
+        )  # type: ignore[union-attr]
         self.voice_client.listen(voice_recv.BasicSink(self._voice_callback))
         await ctx.send("Bot connected to voice channel!")
 
@@ -271,12 +295,20 @@ class DiscordBot(commands.Cog):
                 print("Disconnecting from voice channel to reconnect...")
                 await self.voice_client.disconnect(force=False)
 
-            if not self.context or not self.context.author.voice or not self.context.author.voice.channel:  # type: ignore[union-attr]
+            if (
+                not self.context
+                or not self.context.author.voice
+                or not self.context.author.voice.channel
+            ):  # type: ignore[union-attr]
                 print("Cannot reconnect: No valid voice channel or context found.")
                 return False
 
-            print(f"Reconnecting to voice channel: {self.context.author.voice.channel.name}")  # type: ignore[union-attr]
-            self.voice_client = await self.context.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)  # type: ignore[union-attr]
+            print(
+                f"Reconnecting to voice channel: {self.context.author.voice.channel.name}"
+            )  # type: ignore[union-attr]
+            self.voice_client = await self.context.author.voice.channel.connect(
+                cls=voice_recv.VoiceRecvClient
+            )  # type: ignore[union-attr]
             self.voice_client.listen(voice_recv.BasicSink(self._voice_callback))
             print("Voice listener reinitialized successfully.")
             await self.context.send("Bot reconnected to voice channel!")

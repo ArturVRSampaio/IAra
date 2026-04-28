@@ -11,6 +11,7 @@ def _make_llm():
     sys.modules["gpt4all"] = gpt4all_mod
 
     import iara.llm as _mod
+
     importlib.reload(_mod)
 
     return _mod.LLMAgent(), gpt4all_cls, _mod

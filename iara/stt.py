@@ -30,9 +30,6 @@ class STT:
         wav_buffer.seek(0)
 
         segments, _ = self.model.transcribe(
-            wav_buffer,
-            language="pt",
-            vad_filter=True,
-            hotwords="IAra, Vtuber"
+            wav_buffer, language="pt", vad_filter=True, hotwords="IAra, Vtuber"
         )
         return "".join(seg.text for seg in segments).strip()

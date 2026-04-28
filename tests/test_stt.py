@@ -18,6 +18,7 @@ def _make_stt():
     sys.modules["pydub"] = pydub_mod
 
     import iara.stt as _mod
+
     importlib.reload(_mod)
 
     return _mod.STT(), whisper_cls

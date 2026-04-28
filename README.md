@@ -1,10 +1,11 @@
 # IAra - your local AI Vtuber!
 
 ![tests](https://github.com/ArturVRSampaio/IAra/actions/workflows/tests.yml/badge.svg)
+[![codecov](https://codecov.io/gh/ArturVRSampaio/IAra/branch/main/graph/badge.svg)](https://codecov.io/gh/ArturVRSampaio/IAra)
 
 **I**nteligência **A**rtificial **R**aramente **A**curada
 
-IAra is an interactive VTuber for Discord created by [ArturVRSampaio](https://github.com/ArturVRSampaio). She listens to users in a voice channel, transcribes their speech, generates responses with a local LLM, and talks back — with synchronized mouth animation in VTube Studio.
+IAra is an interactive VTuber for Discord created by [ArturVRSampaio](https://github.com/ArturVRSampaio). She listens to users in a voice channel, transcribes their speech, generates responses with a local LLM, and talks back — with synchronized mouth animation and mood-based expressions in VTube Studio.
 
 ## Pipeline
 
@@ -13,11 +14,11 @@ Voice Channel (Discord)
     ↓ PCM chunks per user
 STT — Whisper Turbo (faster-whisper, PT-BR)
     ↓ transcribed text
-LLM — Llama-3.2-3B-Instruct via GPT4All (local, CUDA)
+LLM — Meta-Llama-3-8B-Instruct via GPT4All (local, CUDA, persistent session)
     ↓ streaming response, sentence by sentence
-TTS — Kokoro (pf_dora, PT-BR, local, CUDA)
+TTS — Kokoro (blended PT/EN/FR/IT feminine voices, local, CUDA)
     ↓ .wav files synthesized in parallel with playback
-Playback on Discord + mouth sync in VTube Studio (pyvts)
+Playback on Discord + mouth sync and mood expressions in VTube Studio (pyvts)
 ```
 
 ## Modules
@@ -25,20 +26,20 @@ Playback on Discord + mouth sync in VTube Studio (pyvts)
 | File | Responsibility |
 |---|---|
 | `main.py` | Entry point — calls `iara.bot.main()` |
-| `iara/bot.py` | `DiscordBot` (commands and playback) + `AudioPipeline` (STT→LLM→TTS, queues, loops) |
+| `iara/bot.py` | `DiscordBot` (commands and playback) + `AudioPipeline` (STT→LLM→TTS, queues, session worker) |
 | `iara/stt.py` | Transcription with faster-whisper, VAD, PT-BR |
-| `iara/llm.py` | GPT4All wrapper, Iara's personality, streaming |
-| `iara/tts.py` | Speech synthesis with Kokoro (pf_dora, PT-BR), single-thread executor |
-| `iara/vtube.py` | WebSocket with VTube Studio, mouth synchronization |
+| `iara/llm.py` | GPT4All wrapper, Iara's personality, mood-aware system prompt, streaming |
+| `iara/tts.py` | Speech synthesis with Kokoro (blended Romance voices), single-thread executor |
+| `iara/vtube.py` | WebSocket with VTube Studio — mouth sync + mood expressions + thinking state |
 | `iara/utils.py` | ANSI color utility for the terminal |
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.12+
 - CUDA (NVIDIA GPU recommended)
 - [FFmpeg](https://ffmpeg.org/) on PATH
 - [VTube Studio](https://denchisoft.com/) with plugin API enabled
-- LLM model downloaded automatically via GPT4All (default: `Llama-3.2-3B-Instruct-Q4_0.gguf`, configurable via `GPT4ALL_MODEL_NAME`)
+- LLM model downloaded automatically via GPT4All (default: `Meta-Llama-3-8B-Instruct.Q4_0.gguf`, configurable via `GPT4ALL_MODEL_NAME`)
 - `kokoro` and `soundfile` (installed via `requirements.txt`; the Kokoro model (~300MB) is downloaded automatically on first run)
 
 ### Discord API
@@ -67,11 +68,28 @@ Copy `.env.example` to `.env` and fill in the values:
 DISCORD_TOKEN=your_token_here
 
 # Optional — overrides the GPT4All model (downloaded automatically)
-GPT4ALL_MODEL_NAME=Llama-3.2-3B-Instruct-Q4_0.gguf
+GPT4ALL_MODEL_NAME=Meta-Llama-3-8B-Instruct.Q4_0.gguf
 GPT4ALL_MODEL_PATH=~/AppData/Local/nomic.ai/GPT4All/
+
+# Optional — turns per LLM session before resetting to preserve system prompt (default: 15)
+IARA_MAX_SESSION_TURNS=15
 ```
 
 On first run, VTube Studio will ask for authorization for the **"Iara VTuber"** plugin. The token will be saved to `token.txt`.
+
+### VTube Studio hotkeys
+
+IAra triggers expressions via VTube Studio hotkeys. Create the following hotkeys in your model:
+
+| Hotkey | When triggered |
+|---|---|
+| `IAra_Thinking` | While the LLM is generating a response |
+| `IAra_Sad` | Mood 0–2 |
+| `IAra_Neutral` | Mood 3–4 |
+| `IAra_Happy` | Mood 5 |
+| `IAra_Excited` | Mood 6–10 |
+
+If a hotkey is not found, IAra silently skips it — the bot continues working without expressions.
 
 ## Usage
 
@@ -86,6 +104,37 @@ Available Discord commands:
 | `!test` | Connects the bot to the user's voice channel |
 | `!kickstart` | Reconnects the bot to the voice channel |
 | `!ping` | Checks if the bot is online |
+
+## Conversation memory
+
+IAra keeps a single GPT4All chat session open across turns, so she remembers earlier messages within the session. After `IARA_MAX_SESSION_TURNS` turns (default: 15), the session resets automatically to prevent the LLM context from filling up and evicting the system prompt.
+
+## Development
+
+Install dev dependencies (includes mypy, ruff, pytest, coverage, pip-audit):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the test suite:
+
+```bash
+python -m pytest tests/ -m "not integration" --cov=iara --cov-fail-under=90
+```
+
+Type check:
+
+```bash
+python -m mypy iara/
+```
+
+Lint and format:
+
+```bash
+ruff check iara/ tests/
+ruff format iara/ tests/
+```
 
 ## Troubleshooting
 
@@ -144,6 +193,10 @@ IAra/
 │   └── utils.py
 ├── tests/             # pytest test suite
 ├── experiments/       # per-subsystem prototypes and experiments
+├── requirements.txt
+├── requirements-dev.txt
+├── mypy.ini
+├── ruff.toml
 ├── .env.example
 └── .env
 ```

@@ -59,17 +59,22 @@ def build_system_prompt(mood: int) -> str:
 
 class LLMAgent:
     def __init__(self) -> None:
-        model_name = os.getenv("GPT4ALL_MODEL_NAME", "Meta-Llama-3-8B-Instruct.Q4_0.gguf")
-        model_path = os.getenv("GPT4ALL_MODEL_PATH", os.path.expanduser("~/AppData/Local/nomic.ai/GPT4All/"))
+        model_name = os.getenv(
+            "GPT4ALL_MODEL_NAME", "Meta-Llama-3-8B-Instruct.Q4_0.gguf"
+        )
+        model_path = os.getenv(
+            "GPT4ALL_MODEL_PATH",
+            os.path.expanduser("~/AppData/Local/nomic.ai/GPT4All/"),
+        )
 
         self.gpt4all: GPT4All = GPT4All(
             model_name,
             model_path=model_path,
             n_ctx=8192,
             ngl=100,
-            device='cuda',
+            device="cuda",
             n_threads=16,
-            verbose=True
+            verbose=True,
         )
 
     def getChatSession(self, mood: int = 5) -> AbstractContextManager[Any]:
@@ -86,7 +91,7 @@ class LLMAgent:
                 top_k=40,
                 repeat_penalty=1.30,
                 repeat_last_n=128,
-                streaming=True
+                streaming=True,
             )
 
         except Exception as e:
