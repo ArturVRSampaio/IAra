@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import asyncio
 import os
+import re
 import tempfile
 from collections import deque
 from datetime import datetime, timedelta
-import re
+from typing import Any
 
 import discord
 import torchaudio
@@ -22,24 +25,24 @@ llm = LLMAgent()
 tts = SpeechSynthesizer()
 
 _MOOD_RE = re.compile(r'\[([+\-=])\]')
-_MOOD_DELTA = {'+': 1, '-': -1, '=': 0}
+_MOOD_DELTA: dict[str, int] = {'+': 1, '-': -1, '=': 0}
 _TRAILING_JUNK_RE = re.compile(r'[^\w\sÀ-ÿ]+$')
 
 
 class AudioPipeline:
-    def __init__(self, stt, llm, tts):
+    def __init__(self, stt: STT, llm: LLMAgent, tts: SpeechSynthesizer) -> None:
         self.stt = stt
         self.llm = llm
         self.tts = tts
-        self.bot = None
-        self.mood = 5
-        self.user_voice_to_process_queue = {}
-        self.audio_to_play_queue = deque()
-        self.transcript_queue = asyncio.Queue()
-        self.accept_packages = True
-        self.can_release_accept_packages = True
+        self.bot: DiscordBot | None = None
+        self.mood: int = 5
+        self.user_voice_to_process_queue: dict[Any, list[bytes]] = {}
+        self.audio_to_play_queue: deque[tuple[str, asyncio.Event]] = deque()
+        self.transcript_queue: asyncio.Queue[str] = asyncio.Queue()
+        self.accept_packages: bool = True
+        self.can_release_accept_packages: bool = True
 
-    async def transcribe_for_user(self, user) -> str:
+    async def transcribe_for_user(self, user: Any) -> str:
         pcm_chunks = self.user_voice_to_process_queue.get(user, [])
         transcript = self.stt.transcribe_audio(pcm_chunks)
         return f"{user} says: {transcript}\n" if transcript else ""
@@ -53,7 +56,7 @@ class AudioPipeline:
             ready.set()
 
     async def ask_llm_and_process(self, transcript: str) -> None:
-        asyncio.create_task(self.bot.context.send(
+        asyncio.create_task(self.bot.context.send(  # type: ignore[union-attr]
             f"===============================================\n"
             f"**Full Transcript**:\n{transcript}\n"
             f"==============================================="
@@ -104,13 +107,13 @@ class AudioPipeline:
         mood_match = _MOOD_RE.search(full_response)
         if mood_match:
             self.mood = max(0, min(10, self.mood + _MOOD_DELTA[mood_match.group(1)]))
-            asyncio.create_task(self.bot.vts.trigger_mood_expression(self.mood))
+            asyncio.create_task(self.bot.vts.trigger_mood_expression(self.mood))  # type: ignore[union-attr]
             clean_response = _TRAILING_JUNK_RE.sub('', full_response[:mood_match.start()].strip())
         else:
             clean_response = _special_token_re.sub('', full_response).strip()
 
         print(f"\n[MOOD: {self.mood}/10]")
-        asyncio.create_task(self.bot.context.send(
+        asyncio.create_task(self.bot.context.send(  # type: ignore[union-attr]
             f"===============================================\n"
             f"**Full Response**:\n**IAra says:** {clean_response}\n"
             f"**Mood:** {self.mood}/10\n"
@@ -132,7 +135,7 @@ class AudioPipeline:
                 self.audio_to_play_queue.popleft()
                 continue
 
-            success = await self.bot.play_audio(audio_file)
+            success = await self.bot.play_audio(audio_file)  # type: ignore[union-attr]
 
             if success:
                 try:
@@ -164,7 +167,7 @@ class AudioPipeline:
                     if isinstance(result, str) and result:
                         full_transcript += result
                         print(f"[TRANSCRIPT] {result}")
-                        asyncio.create_task(self.bot.context.send(f"**{result.strip()}**"))
+                        asyncio.create_task(self.bot.context.send(f"**{result.strip()}**"))  # type: ignore[union-attr]
 
                 if not full_transcript:
                     self.can_release_accept_packages = True
@@ -202,16 +205,16 @@ class AudioPipeline:
 
 
 class DiscordBot(commands.Cog):
-    def __init__(self, bot, pipeline: AudioPipeline):
-        self.vts = VTubeStudioTalk()
-        self.last_audio_time = None
+    def __init__(self, bot: commands.Bot, pipeline: AudioPipeline) -> None:
+        self.vts: VTubeStudioTalk = VTubeStudioTalk()
+        self.last_audio_time: datetime | None = None
         self.bot = bot
-        self.voice_client = None
-        self.context = None
+        self.voice_client: voice_recv.VoiceRecvClient | None = None
+        self.context: commands.Context | None = None
         self.pipeline = pipeline
         pipeline.bot = self
 
-    def _voice_callback(self, user, data: voice_recv.VoiceData) -> None:
+    def _voice_callback(self, user: Any, data: voice_recv.VoiceData) -> None:
         self.last_audio_time = datetime.now()
         print(f"Data received from user: {user} at {self.last_audio_time}")
         if user not in self.pipeline.user_voice_to_process_queue:
@@ -229,7 +232,7 @@ class DiscordBot(commands.Cog):
 
         waveform, sample_rate = torchaudio.load(audio_file)
 
-        self.voice_client.play(
+        self.voice_client.play(  # type: ignore[union-attr]
             audio_source,
             after=lambda e: loop.call_soon_threadsafe(playback_done.set)
         )
@@ -247,7 +250,7 @@ class DiscordBot(commands.Cog):
     @commands.command()
     async def test(self, ctx: commands.Context) -> None:
         self.context = ctx
-        self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+        self.voice_client = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)  # type: ignore[union-attr]
         self.voice_client.listen(voice_recv.BasicSink(self._voice_callback))
         await ctx.send("Bot connected to voice channel!")
 
@@ -259,12 +262,12 @@ class DiscordBot(commands.Cog):
                 print("Disconnecting from voice channel to reconnect...")
                 await self.voice_client.disconnect(force=False)
 
-            if not self.context or not self.context.author.voice or not self.context.author.voice.channel:
+            if not self.context or not self.context.author.voice or not self.context.author.voice.channel:  # type: ignore[union-attr]
                 print("Cannot reconnect: No valid voice channel or context found.")
                 return False
 
-            print(f"Reconnecting to voice channel: {self.context.author.voice.channel.name}")
-            self.voice_client = await self.context.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+            print(f"Reconnecting to voice channel: {self.context.author.voice.channel.name}")  # type: ignore[union-attr]
+            self.voice_client = await self.context.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)  # type: ignore[union-attr]
             self.voice_client.listen(voice_recv.BasicSink(self._voice_callback))
             print("Voice listener reinitialized successfully.")
             await self.context.send("Bot reconnected to voice channel!")
@@ -279,19 +282,22 @@ class DiscordBot(commands.Cog):
 pipeline = AudioPipeline(stt, llm, tts)
 
 
-async def main():
+async def main() -> None:
     bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
     @bot.event
-    async def on_ready():
+    async def on_ready() -> None:
+        assert bot.user is not None
         print(f"Logged in as {bot.user} ({bot.user.id})")
 
     @bot.event
-    async def setup_hook():
+    async def setup_hook() -> None:
         await bot.add_cog(DiscordBot(bot, pipeline))
 
     asyncio.create_task(pipeline.voice_consumer())
     asyncio.create_task(pipeline.voice_player())
     asyncio.create_task(pipeline.session_worker())
 
-    await bot.start(os.getenv("DISCORD_TOKEN"))
+    token = os.getenv("DISCORD_TOKEN")
+    assert token is not None, "DISCORD_TOKEN environment variable is not set"
+    await bot.start(token)

@@ -7,10 +7,10 @@ from kokoro import KPipeline
 
 
 class SpeechSynthesizer:
-    def __init__(self):
-        self.pipeline = KPipeline(lang_code='p')
-        self.voice = 'pf_dora,ef_dora,ff_siwis,if_sara'
-        self._executor = ThreadPoolExecutor(max_workers=1)
+    def __init__(self) -> None:
+        self.pipeline: KPipeline = KPipeline(lang_code='p')
+        self.voice: str = 'pf_dora,ef_dora,ff_siwis,if_sara'
+        self._executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
 
     async def generate_tts_file(self, text: str, output_path: str) -> None:
         if not text.strip():

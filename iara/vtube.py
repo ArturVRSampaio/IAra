@@ -1,5 +1,6 @@
 import asyncio
 import time
+from typing import Any
 
 import numpy as np
 import pyvts
@@ -15,30 +16,30 @@ plugin_info = {
 
 
 class VTubeStudioTalk:
-    def __init__(self):
-        self.vts = pyvts.vts(plugin_info=plugin_info)
-        self.is_connected = False
-        self.lock = asyncio.Lock()
+    def __init__(self) -> None:
+        self.vts: Any = pyvts.vts(plugin_info=plugin_info)
+        self.is_connected: bool = False
+        self.lock: asyncio.Lock = asyncio.Lock()
 
-    async def connect(self):
+    async def connect(self) -> None:
         async with self.lock:
             await self.vts.connect()
             await self.vts.request_authenticate_token()
-            is_auth = await self.vts.request_authenticate()
+            is_auth: bool = await self.vts.request_authenticate()
             self.is_connected = is_auth
             print(Bcolors.OKGREEN + "VTube Studio connected : " + str(is_auth))
 
-    def _get_audio_intensity(self, waveform: torch.Tensor, sample_rate: int, block_duration: float = 0.05) -> list:
+    def _get_audio_intensity(self, waveform: torch.Tensor, sample_rate: int, block_duration: float = 0.05) -> list[float]:
         samples = waveform.numpy().mean(axis=0)
         block_size = int(sample_rate * block_duration)
-        intensities = []
+        intensities: list[float] = []
         for i in range(0, len(samples), block_size):
             block = samples[i:i + block_size]
             intensity = np.abs(block).mean()
             intensities.append(intensity)
         return intensities
 
-    async def sync_mouth(self, waveform: torch.Tensor, sample_rate: int):
+    async def sync_mouth(self, waveform: torch.Tensor, sample_rate: int) -> None:
         start_time = time.time()
 
         if not self.is_connected:
@@ -64,7 +65,7 @@ class VTubeStudioTalk:
             sleep_time = max(0, expected_time - elapsed_time)
             await asyncio.sleep(sleep_time)
 
-    async def execute_animation(self, animation_hotkey):
+    async def execute_animation(self, animation_hotkey: str) -> None:
         if not self.is_connected:
             await self.connect()
 
@@ -98,7 +99,7 @@ class VTubeStudioTalk:
     async def trigger_mood_expression(self, mood: int) -> None:
         await self.execute_animation(self._mood_to_hotkey(mood))
 
-    async def change_expression(self):
+    async def change_expression(self) -> None:
         if not self.is_connected:
             await self.connect()
 

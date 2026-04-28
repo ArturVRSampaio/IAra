@@ -1,4 +1,7 @@
 import os
+from collections.abc import Iterator
+from contextlib import AbstractContextManager
+from typing import Any
 
 from gpt4all import GPT4All
 
@@ -26,7 +29,7 @@ _SYSTEM_PROMPT = (
     "    - De respostas breves e com frases curtas."
 )
 
-_MOOD_LABELS = [
+_MOOD_LABELS: list[tuple[range, str]] = [
     (range(0, 3), "muito irritada"),
     (range(3, 5), "aborrecida"),
     (range(5, 6), "neutra"),
@@ -55,11 +58,11 @@ def build_system_prompt(mood: int) -> str:
 
 
 class LLMAgent:
-    def __init__(self):
+    def __init__(self) -> None:
         model_name = os.getenv("GPT4ALL_MODEL_NAME", "Meta-Llama-3-8B-Instruct.Q4_0.gguf")
         model_path = os.getenv("GPT4ALL_MODEL_PATH", os.path.expanduser("~/AppData/Local/nomic.ai/GPT4All/"))
 
-        self.gpt4all = GPT4All(
+        self.gpt4all: GPT4All = GPT4All(
             model_name,
             model_path=model_path,
             n_ctx=8192,
@@ -69,10 +72,10 @@ class LLMAgent:
             verbose=True
         )
 
-    def getChatSession(self, mood: int = 5):
+    def getChatSession(self, mood: int = 5) -> AbstractContextManager[Any]:
         return self.gpt4all.chat_session(system_prompt=build_system_prompt(mood))
 
-    def ask(self, messages):
+    def ask(self, messages: str) -> Iterator[str] | str:
         try:
             response = self.gpt4all.generate(
                 prompt=messages,

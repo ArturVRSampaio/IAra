@@ -1,19 +1,19 @@
+from io import BytesIO
+
 from faster_whisper import WhisperModel
 from pydub import AudioSegment
-from io import BytesIO
 
 
 class STT:
-    def __init__(self):
-        self.model = WhisperModel(
+    def __init__(self) -> None:
+        self.model: WhisperModel = WhisperModel(
             "turbo",
             cpu_threads=4,
             num_workers=5,
             device="cuda",
         )
 
-    def transcribe_audio(self, pcm_chunks) -> str:
-        """Transcribes audio chunks for a user into text."""
+    def transcribe_audio(self, pcm_chunks: list[bytes]) -> str:
         if not pcm_chunks:
             return ""
 
