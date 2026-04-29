@@ -8,7 +8,7 @@ from kokoro import KPipeline
 
 class SpeechSynthesizer:
     def __init__(self) -> None:
-        self.pipeline: KPipeline = KPipeline(lang_code="p")
+        self.pipeline: KPipeline = KPipeline(lang_code="p", repo_id="hexgrad/Kokoro-82M")
         self.voice: str = "pf_dora,ef_dora,ff_siwis,if_sara"
         self._executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
 
