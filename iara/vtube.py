@@ -76,18 +76,20 @@ class VTubeStudioTalk:
             return
 
         try:
-            hotkey_response = await self.vts.request(
-                self.vts.vts_request.requestHotKeyList()
-            )
+            async with self.lock:
+                hotkey_response = await self.vts.request(
+                    self.vts.vts_request.requestHotKeyList()
+                )
             hotkeys = [
                 hk["name"]
                 for hk in hotkey_response.get("data", {}).get("availableHotkeys", [])
             ]
 
             if animation_hotkey in hotkeys:
-                await self.vts.request(
-                    self.vts.vts_request.requestTriggerHotKey(animation_hotkey)
-                )
+                async with self.lock:
+                    await self.vts.request(
+                        self.vts.vts_request.requestTriggerHotKey(animation_hotkey)
+                    )
                 print(f"Triggered {animation_hotkey}")
             else:
                 print(f"Hotkey '{animation_hotkey}' not found in VTube Studio")

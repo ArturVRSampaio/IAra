@@ -621,7 +621,7 @@ class TestPlayAudioQueue:
 
         asyncio.run(run())
 
-    def test_stops_on_playback_failure(self):
+    def test_playback_failure_still_drains_queue(self):
         async def run():
             ready1 = asyncio.Event()
             ready1.set()
@@ -640,13 +640,7 @@ class TestPlayAudioQueue:
             _main.pipeline.bot.play_audio = AsyncMock(return_value=False)
 
             await _main.pipeline.play_audio_queue()
-            assert len(_main.pipeline.audio_to_play_queue) == 2
-
-            try:
-                os.unlink(path1)
-                os.unlink(path2)
-            except Exception:
-                pass
+            assert len(_main.pipeline.audio_to_play_queue) == 0
 
         asyncio.run(run())
 

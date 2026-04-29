@@ -69,13 +69,14 @@ class AudioPipeline:
             ready.set()
 
     async def ask_llm_and_process(self, transcript: str) -> None:
-        asyncio.create_task(
-            self.bot.context.send(  # type: ignore[union-attr]
-                f"===============================================\n"
-                f"**Full Transcript**:\n{transcript}\n"
-                f"==============================================="
+        if self.bot.context is not None:
+            asyncio.create_task(
+                self.bot.context.send(
+                    f"===============================================\n"
+                    f"**Full Transcript**:\n{transcript}\n"
+                    f"==============================================="
+                )
             )
-        )
 
         full_response = ""
         buffer = ""
@@ -130,14 +131,15 @@ class AudioPipeline:
             clean_response = _special_token_re.sub("", full_response).strip()
 
         print(f"\n[MOOD: {self.mood}/10]")
-        asyncio.create_task(
-            self.bot.context.send(  # type: ignore[union-attr]
-                f"===============================================\n"
-                f"**Full Response**:\n**IAra says:** {clean_response}\n"
-                f"**Mood:** {self.mood}/10\n"
-                f"==============================================="
+        if self.bot.context is not None:
+            asyncio.create_task(
+                self.bot.context.send(
+                    f"===============================================\n"
+                    f"**Full Response**:\n**IAra says:** {clean_response}\n"
+                    f"**Mood:** {self.mood}/10\n"
+                    f"==============================================="
+                )
             )
-        )
         self.can_release_accept_packages = True
 
     async def play_audio_queue(self) -> None:
@@ -155,17 +157,17 @@ class AudioPipeline:
                 continue
 
             success = await self.bot.play_audio(audio_file)
+            self.audio_to_play_queue.popleft()
 
-            if success:
-                try:
-                    os.remove(audio_file)
+            try:
+                os.remove(audio_file)
+                if success:
                     print(f"Removed file: {audio_file}")
-                except Exception as e:
-                    print(f"Error removing file {audio_file}: {e}")
-                self.audio_to_play_queue.popleft()
-            else:
-                print("Playback failed, stopping to avoid infinite loop")
-                break
+            except Exception as e:
+                print(f"Error removing file {audio_file}: {e}")
+
+            if not success:
+                print("Playback failed, skipping audio file")
 
     async def voice_consumer(self) -> None:
         while True:
@@ -184,10 +186,8 @@ class AudioPipeline:
                 print("Stopped accepting packages.")
                 asyncio.create_task(self.bot.vts.execute_animation("IAra_Thinking"))
 
-                tasks = [
-                    self.transcribe_for_user(user)
-                    for user in self.user_voice_to_process_queue
-                ]
+                users = list(self.user_voice_to_process_queue.keys())
+                tasks = [self.transcribe_for_user(user) for user in users]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 full_transcript = ""
@@ -265,7 +265,11 @@ class DiscordBot(commands.Cog):
 
         waveform, sample_rate = torchaudio.load(audio_file)
 
-        self.voice_client.play(  # type: ignore[union-attr]
+        if self.voice_client is None:
+            print("No voice client available for playback")
+            return False
+
+        self.voice_client.play(
             audio_source, after=lambda e: loop.call_soon_threadsafe(playback_done.set)
         )
         mouth_task = asyncio.create_task(self.vts.sync_mouth(waveform, sample_rate))
